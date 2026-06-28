@@ -1,13 +1,11 @@
 # puck
 
 Provisions a stock **NanoPi Zero2** into a hardened, tailnet-only mini-server (a
-"puck") with one Ansible run. No image surgery: stock Debian Core in; key-only
-SSH, a Tailscale exit node, and a Wake-on-LAN/diagnostics dashboard out. Every
-step is idempotent, so re-running is safe.
+"puck") using Ansible. Builds off of Debian Core with key-only
+SSH, a Tailscale exit node, and a custom Wake-on-LAN/diagnostics dashboard.
 
-The main app is **[puckview](puckview/)**: a single static Go binary for
-Wake-on-LAN with diagnostics — multi-signal presence (ARP / ICMP / TCP), LAN
-discovery, and box metrics, served over the tailnet.
+The dashboard is **[puckview](puckview/)**: a single static Go binary for
+Wake-on-LAN with diagnostics, LAN discovery, and box metrics, exposed over the tailnet only.
 
 ## Provision a puck
 
@@ -27,7 +25,7 @@ ssh-keygen -t ed25519 -f keys/puck-admin -N "" -C puck-admin && chmod 600 keys/p
 
 ### 2. Inventory + secrets (one-time)
 
-Both files are gitignored — copy the committed templates and fill them in:
+Both files are gitignored. Copy the committed templates and fill them in:
 
 ```bash
 cd ansible
@@ -42,7 +40,7 @@ $EDITOR group_vars/all/secrets.yml                   # pi_password (required), t
 # Fresh board on the bench LAN (one at a time), first contact + enroll (can use IP in place of hostname):
 ansible-playbook site.yml -l puck-home -e ansible_host=NanoPi-Zero2
 
-# Day-2: re-run over the tailnet, by name:
+# Subsequent runs (over the tailnet, by name):
 ansible-playbook site.yml -l puck-home
 ```
 

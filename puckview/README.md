@@ -3,8 +3,8 @@
 A Wake-on-LAN, LAN-presence, and box-diagnostics dashboard for pucks (NanoPi
 Zero2 mini-servers). A single static Go binary, served over the tailnet.
 
-For provisioning and deployment see the [repo README](../README.md). This file
-covers building and developing the Go app.
+For provisioning see the [repo README](../README.md). This file covers building,
+deploying, and developing the Go app.
 
 ## What it does
 
@@ -69,10 +69,27 @@ offline. Refresh it on its own with `make oui` (`--force` to bypass the cache).
 | `PUCKVIEW_CATALOGUE` | `/opt/puckview/catalogue.json` | service catalogue |
 | `PUCKVIEW_LAN_RESOLVER` | gateway | rDNS resolver |
 
-## CI / releases
+## CI and releases
 
 `.github/workflows/ci.yml` vets, tests, and cross-compiles the puck target on
 every push and PR (from the committed `oui.txt`, no network). Pushing a
 `puckview-v<version>` tag runs `release.yml`, which cross-compiles
 arm64/amd64/darwin, writes `.sha256` sidecars, and publishes them as a GitHub
-release — the binaries the Ansible role downloads by default.
+release.
+
+## Deploy
+
+The Ansible `puckview` role downloads the pinned release binary by default
+(`puckview_version` selects the tag), so the puck needs no Go toolchain. For dev
+iteration or an unreleased build, build locally and have the role copy that
+instead:
+
+```sh
+make arm64                       # -> dist/puckview-linux-arm64
+cd ../ansible && ansible-playbook site.yml -l <host> --tags puckview \
+  -e puckview_use_local_build=true
+```
+
+Set `puckview_sha256` to pin the download's checksum. The role binds the binary
+to loopback and exposes it over the tailnet; see
+[ansible/README.md](../ansible/README.md).
