@@ -1,0 +1,38 @@
+---
+# Committed, non-secret defaults. Sensitive/required values live in the
+# gitignored `secrets.yml` alongside this file (see secrets.yml.example).
+# Ansible auto-loads every file in this directory and merges them.
+
+# --- identity / auth -------------------------------------------------------
+admin_user: pi
+# The dedicated PUBLIC key installed into authorized_keys (keys/puck-admin.pub).
+admin_public_key: "{{ playbook_dir }}/../keys/puck-admin.pub"
+# Matching PRIVATE key, at keys/puck-admin (gitignored).
+# Used to connect once password auth is off, and for the lockdown probe.
+admin_private_key: "{{ playbook_dir }}/../keys/puck-admin"
+
+# The stock factory login user is `admin_user` (pi). The stock Debian Core
+# password is the PUBLIC wiki default "pi" — not a secret,
+# so it sits here as a default. Override per box on the CLI if it differs:
+#   -e factory_password=...
+factory_password: pi
+
+# `pi_password` (the serial-console / break-glass password) is REQUIRED and lives
+# in secrets.yml — site.yml asserts it is set before provisioning.
+
+# --- tailscale -------------------------------------------------------------
+# Hostname defaults to the inventory name; override ad-hoc with -e ts_hostname=...
+ts_hostname: "{{ inventory_hostname }}"
+# `ts_authkey` (reusable, TAGGED) lives in secrets.yml. Empty => the tailscale role
+# is skipped, leaving any existing enrollment untouched. Revoke it once all units
+# are enrolled.
+advertise_exit_node: true
+accept_routes: false      # doctrine: reach LAN hosts via SSH jump / SOCKS, not subnet routes
+
+# --- unattended security upgrades -----------------------------------------
+unattended_auto_reboot: true
+unattended_auto_reboot_time: "04:00"
+
+# --- containers ------------------------------------------------------------
+# Container admin passwords live in secrets.yml: `pihole_admin_password` (only
+# used when the optional pihole role is enabled).

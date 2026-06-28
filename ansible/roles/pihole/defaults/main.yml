@@ -1,0 +1,24 @@
+---
+# Optional: disabled by default. Opt in per run with -e pihole_enabled=true.
+pihole_enabled: false
+pihole_version: "2026.06.0"
+pihole_dir: /opt/pihole
+pihole_timezone: "Australia/Sydney"
+# Admin web password (Pi-hole v6 native env var, FTLCONF_webserver_api_password).
+# Defaults to "pihole"; override in group_vars/all/secrets.yml (or
+# -e pihole_admin_password=...). Set it empty to have Pi-hole generate a random
+# one instead (read it from `docker logs pihole`).
+pihole_admin_password: "pihole"
+# Admin UI bind + port. Loopback only (tailnet-only via `tailscale serve`), and
+# OFF :80 — `tailscale serve` already fronts puckview on the tailnet, and Pi-hole on
+# host networking would otherwise collide on host :80.
+pihole_web_bind: "127.0.0.1"
+pihole_web_port: 8080
+# Tailnet HTTP port that `tailscale serve` listens on for the admin UI. Distinct
+# from puckview's (80) so the two don't contend for the same serve port.
+pihole_serve_port: 8080
+# DNS listen mode for LAN devices that point their resolver at this puck:
+# 'LOCAL' answers only on the box's local subnet(s) — the right scope for
+# LAN-local ad-blocking. ('ALL' would also answer on the tailnet, but this is
+# NOT the tailnet resolver, so there's no need to expose :53 there.)
+pihole_listening_mode: "LOCAL"

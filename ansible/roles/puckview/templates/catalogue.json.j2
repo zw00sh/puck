@@ -1,0 +1,13 @@
+{#- Provisioned service catalogue consumed by puckview's SERVICES panel.
+    Each enabled service links to its tailnet port and is health-checked on
+    loopback. Devices are NOT listed here — they're dynamic/app-owned. -#}
+{%- set out = [] -%}
+{%- for s in puckview_services if s.enabled | bool -%}
+{%-   set _ = out.append({
+        'name': s.name,
+        'url': 'http://' ~ inventory_hostname ~ ':' ~ s.port ~ s.path,
+        'detail': ':' ~ s.port ~ s.path,
+        'health': '127.0.0.1:' ~ s.port|string
+      }) -%}
+{%- endfor -%}
+{{ out | to_nice_json }}

@@ -1,0 +1,18 @@
+---
+- name: Ensure the systemd manager drop-in directory exists
+  ansible.builtin.file:
+    path: /etc/systemd/system.conf.d
+    state: directory
+    mode: "0755"
+
+- name: Configure the systemd hardware watchdog (auto-reboot if the box hangs)
+  ansible.builtin.copy:
+    dest: /etc/systemd/system.conf.d/10-watchdog.conf
+    mode: "0644"
+    content: |
+      # Managed by Ansible. RK3528 exposes /dev/watchdog; systemd pets it every
+      # RuntimeWatchdogSec, and the hardware resets the box if systemd wedges.
+      [Manager]
+      RuntimeWatchdogSec=20s
+      RebootWatchdogSec=2min
+  notify: Reexec systemd

@@ -1,0 +1,52 @@
+---
+- name: Add Tailscale package signing key
+  ansible.builtin.get_url:
+    url: "https://pkgs.tailscale.com/stable/debian/{{ tailscale_repo_release }}.noarmor.gpg"
+    dest: /usr/share/keyrings/tailscale-archive-keyring.gpg
+    mode: "0644"
+
+- name: Add Tailscale apt repository
+  ansible.builtin.get_url:
+    url: "https://pkgs.tailscale.com/stable/debian/{{ tailscale_repo_release }}.tailscale-keyring.list"
+    dest: /etc/apt/sources.list.d/tailscale.list
+    mode: "0644"
+
+- name: Install tailscale
+  ansible.builtin.apt:
+    name: tailscale
+    update_cache: true
+    state: present
+
+- name: Ensure tailscaled is running and enabled
+  ansible.builtin.service:
+    name: tailscaled
+    state: started
+    enabled: true
+
+- name: Check current Tailscale backend state
+  ansible.builtin.command: tailscale status --json
+  register: ts_status
+  changed_when: false
+  failed_when: false
+
+- name: Decide whether the node is already up
+  ansible.builtin.set_fact:
+    ts_running: "{{ (ts_status.rc == 0) and ((ts_status.stdout | from_json).BackendState | default('') == 'Running') }}"
+
+# Initial enrollment uses `tailscale up` (the only command that performs the
+# authkey login). Per doctrine, later config changes must use `tailscale set`,
+# not `up` — add those as separate set-based tasks when needed.
+- name: Enroll node on the tailnet (initial login)
+  ansible.builtin.command:
+    argv:
+      - tailscale
+      - up
+      - "--authkey={{ ts_authkey }}"
+      - "--hostname={{ ts_hostname }}"
+      - "--ssh"
+      - "--advertise-exit-node={{ advertise_exit_node | bool | lower }}"
+      - "--accept-routes={{ accept_routes | bool | lower }}"
+  when: not ts_running
+  register: ts_up
+  changed_when: ts_up.rc == 0
+  no_log: true        # keep the auth key out of Ansible output/logs

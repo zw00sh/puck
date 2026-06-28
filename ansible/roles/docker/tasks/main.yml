@@ -1,0 +1,64 @@
+---
+- name: Install prerequisites for the Docker apt repo
+  ansible.builtin.apt:
+    name:
+      - ca-certificates
+      - curl
+    state: present
+    update_cache: true
+
+- name: Ensure the apt keyrings directory exists
+  ansible.builtin.file:
+    path: /etc/apt/keyrings
+    state: directory
+    mode: "0755"
+
+- name: Add Docker's official GPG key
+  ansible.builtin.get_url:
+    url: https://download.docker.com/linux/debian/gpg
+    dest: /etc/apt/keyrings/docker.asc
+    mode: "0644"
+
+- name: Add the Docker apt repository
+  ansible.builtin.copy:
+    dest: /etc/apt/sources.list.d/docker.list
+    mode: "0644"
+    content: >-
+      deb [arch={{ docker_apt_arch }} signed-by=/etc/apt/keyrings/docker.asc]
+      https://download.docker.com/linux/debian {{ ansible_distribution_release }} stable
+
+- name: Install Docker Engine, the Compose plugin, and fuse-overlayfs
+  ansible.builtin.apt:
+    name:
+      - docker-ce
+      - docker-ce-cli
+      - containerd.io
+      - docker-buildx-plugin
+      - docker-compose-plugin
+      - fuse-overlayfs
+    state: present
+    update_cache: true
+
+- name: Configure Docker's storage driver for the overlay rootfs
+  # The rootfs is an overlay, so the default (containerd image store / overlayfs
+  # snapshotter) can't create whiteouts and image pulls fail. Disable the
+  # containerd image store to use the classic graphdriver, where the
+  # fuse-overlayfs driver works on top of an overlay root.
+  ansible.builtin.copy:
+    dest: /etc/docker/daemon.json
+    mode: "0644"
+    content: |
+      {
+        "features": { "containerd-snapshotter": false },
+        "storage-driver": "{{ docker_storage_driver }}"
+      }
+  notify: Restart docker
+
+- name: Ensure Docker is running and enabled
+  ansible.builtin.systemd:
+    name: docker
+    state: started
+    enabled: true
+
+- name: Apply the storage-driver change before any container role runs
+  ansible.builtin.meta: flush_handlers

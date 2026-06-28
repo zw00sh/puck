@@ -1,0 +1,54 @@
+---
+# Your fleet roster. Copy this file to `hosts.yml` (which is gitignored) and edit
+# in your own pucks:
+#
+#   cp inventory/hosts.yml.example inventory/hosts.yml
+#
+# This is the one file you make your own — playbooks/roles are shared logic; this
+# is YOUR machines. It holds only names (no IPs, no secrets): the IP is passed on
+# the CLI at first contact, and after that the box is reached over Tailscale by
+# name.
+#
+# Each host's NAME is load-bearing — it becomes:
+#   * the box's hostname,
+#   * its Tailscale identity (ts_hostname defaults to the name), and
+#   * the salt for the `pi` password hash (so it's deterministic per box).
+# So pick stable, DNS-safe names (lowercase, hyphens). The `puck-<location>`
+# convention below is just a suggestion.
+#
+# `pucks` is the GROUP the playbook targets (see `hosts: pucks` in site.yml).
+# Keep your hosts under it; add as many as you have.
+
+all:
+  children:
+    pucks:
+      hosts:
+        # One line per puck. Start with one; add more as you build them.
+        puck-home:
+        # puck-parents:
+        # puck-cabin:
+
+# --- Per-host options (optional roles) --------------------------------------
+# Optional roles are OFF by default. Turn one on for a specific puck by setting
+# its flag as a host variable here (this file is gitignored, so per-host config
+# stays local). A host with options uses the indented `key: value` form:
+#
+#     pucks:
+#       hosts:
+#         puck-home:
+#           pihole_enabled: true          # run the optional Pi-hole role on this box
+#         puck-parents:                   # (no options -> Pi-hole stays off)
+#
+# Equivalent one-off without editing this file:
+#   ansible-playbook site.yml -l puck-home -e pihole_enabled=true
+
+# --- How you use these names ------------------------------------------------
+# First contact (fresh box on the bench LAN — you supply the IP just this once):
+#   ansible-playbook site.yml -l puck-home -e ansible_host=192.168.2.2
+#
+# Day-2 (after enrollment — reached over Tailscale by name, no IP):
+#   ansible-playbook site.yml -l puck-home
+#
+# `-l <name>` selects which host(s) from this file to act on; the name must match
+# exactly. Provision fresh boxes ONE at a time (they all boot as the same factory
+# hostname and would otherwise collide on the bench LAN).

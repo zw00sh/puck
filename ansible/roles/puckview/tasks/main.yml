@@ -1,0 +1,136 @@
+---
+# Deploy puckview as a bare-metal systemd service: install the binary, template
+# the unit/env/catalogue, enable it, and expose it at the bare hostname over the
+# tailnet.
+#
+# Binary source: by default the pinned GitHub release is downloaded (the puck
+# never needs a Go toolchain). For dev/offline/pre-release, build locally
+# (`cd puckview && make arm64`) and pass -e puckview_use_local_build=true to copy
+# that artifact instead. See puckview/README.md.
+
+# Override path only: verify the local build exists BEFORE touching the puck, so a
+# missing build aborts cleanly instead of leaving a half-provisioned box.
+- name: Locate the local puckview build
+  ansible.builtin.stat:
+    path: "{{ puckview_build_output }}"
+  delegate_to: localhost
+  become: false
+  run_once: true
+  register: puckview_bin
+  when: puckview_use_local_build | bool
+
+- name: Require the local puckview build
+  ansible.builtin.assert:
+    that: puckview_bin.stat.exists
+    fail_msg: >-
+      puckview_use_local_build is set but there's no binary at
+      {{ puckview_build_output }}. Build it first:
+      `cd puckview && make arm64 GOARCH={{ puckview_goarch }}`, then re-run.
+    success_msg: "Deploying local build {{ puckview_build_output }}"
+  run_once: true
+  when: puckview_use_local_build | bool
+
+- name: Create the puckview system user
+  ansible.builtin.user:
+    name: "{{ puckview_user }}"
+    system: true
+    shell: /usr/sbin/nologin
+    create_home: false
+    home: "{{ puckview_dir }}"
+
+- name: Create puckview directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ puckview_user }}"
+    group: "{{ puckview_user }}"
+    mode: "0755"
+  loop:
+    - "{{ puckview_dir }}"
+    - "{{ puckview_data_dir }}"
+
+# Default: download the pinned release. Override: copy the local build.
+- name: Download the pinned puckview release
+  ansible.builtin.get_url:
+    url: "https://github.com/{{ puckview_repo }}/releases/download/puckview-v{{ puckview_version }}/puckview-linux-{{ puckview_goarch }}"
+    dest: "{{ puckview_dir }}/puckview"
+    owner: "{{ puckview_user }}"
+    group: "{{ puckview_user }}"
+    mode: "0755"
+    checksum: "{{ ('sha256:' + puckview_sha256) if puckview_sha256 | length > 0 else omit }}"
+  when: not puckview_use_local_build | bool
+  notify: Restart puckview
+
+- name: Install the local puckview build on the puck
+  ansible.builtin.copy:
+    src: "{{ puckview_build_output }}"
+    dest: "{{ puckview_dir }}/puckview"
+    owner: "{{ puckview_user }}"
+    group: "{{ puckview_user }}"
+    mode: "0755"
+  when: puckview_use_local_build | bool
+  notify: Restart puckview
+
+- name: Write the puckview environment file
+  ansible.builtin.template:
+    src: puckview.env.j2
+    dest: /etc/puckview.env
+    mode: "0644"
+  notify: Restart puckview
+
+- name: Generate the service catalogue
+  ansible.builtin.template:
+    src: catalogue.json.j2
+    dest: "{{ puckview_dir }}/catalogue.json"
+    owner: "{{ puckview_user }}"
+    group: "{{ puckview_user }}"
+    mode: "0644"
+  # Read live by puckview each refresh — no restart needed.
+
+- name: Install the puckview systemd unit
+  ansible.builtin.template:
+    src: puckview.service.j2
+    dest: /etc/systemd/system/puckview.service
+    mode: "0644"
+  notify: Restart puckview
+
+- name: Enable and start puckview
+  ansible.builtin.systemd:
+    name: puckview.service
+    enabled: true
+    state: started
+    daemon_reload: true
+
+# --- Expose puckview at the bare hostname over the tailnet ---
+- name: Read Tailscale backend state
+  ansible.builtin.command: tailscale status --json
+  register: puckview_ts_status
+  changed_when: false
+  failed_when: false
+
+- name: Note whether the node is on the tailnet
+  ansible.builtin.set_fact:
+    puckview_ts_running: "{{ (puckview_ts_status.stdout | default('{}') | from_json).BackendState | default('') == 'Running' }}"
+
+- name: Read current tailscale serve config
+  ansible.builtin.command: tailscale serve status
+  register: puckview_ts_serve
+  changed_when: false
+  failed_when: false
+  when: puckview_ts_running
+
+# Set the :80 handler to proxy puckview — no `serve reset` needed (which would
+# also drop the pihole handler on its own port).
+- name: Serve puckview on the tailnet (bare hostname)
+  ansible.builtin.command: "tailscale serve --bg --http={{ puckview_serve_port }} {{ puckview_bind_ip }}:{{ puckview_port }}"
+  when:
+    - puckview_ts_running
+    - (puckview_bind_ip ~ ':' ~ puckview_port) not in (puckview_ts_serve.stdout | default(''))
+  changed_when: true
+
+- name: Report when Tailscale serve was skipped
+  ansible.builtin.debug:
+    msg: >-
+      Node not on the tailnet — puckview is running on {{ puckview_bind_ip }}:{{ puckview_port }}
+      but skipped `tailscale serve`. Enroll the node (supply ts_authkey) and re-run.
+  when: not puckview_ts_running

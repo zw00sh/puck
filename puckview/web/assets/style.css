@@ -1,0 +1,112 @@
+:root {
+  --bg:#06080a; --fg:#c4cfd8; --dim:#55606e; --dimmer:#2b333d; --line:#141a21;
+  --cap-bg:#0e7c86; --cap-fg:#04181a; --teal:#3ad3de;
+  --ok:#5ad17e; --warn:#e7b549; --bad:#f0625f;
+  --mono:"JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+* { box-sizing:border-box; }
+html { color-scheme:dark; }
+body { margin:0; background:var(--bg); color:var(--fg); font-family:var(--mono);
+       font-size:13px; line-height:1.45; font-variant-numeric:tabular-nums;
+       -webkit-font-smoothing:antialiased; padding:0 0 2rem; }
+.wrap { max-width:1180px; margin-inline:auto; padding:0 .75rem; }
+.fg{color:var(--fg);} .dim{color:var(--dim);} .dimmer{color:var(--dimmer);}
+.ok{color:var(--ok);} .warn{color:var(--warn);} .bad{color:var(--bad);}
+
+.cmd{ color:var(--teal); cursor:pointer; user-select:none; white-space:nowrap; }
+a.cmd{ text-decoration:none; } .cmd:hover{ text-decoration:underline; }
+.cmd.danger:hover{color:var(--bad);}
+
+input { font-family:var(--mono); font-size:13px; line-height:1.4; font-variant-numeric:tabular-nums;
+        color:var(--fg); background:#0a1014; border:1px solid #283341; border-radius:2px;
+        padding:.06rem .4rem; vertical-align:middle; }
+input::placeholder{ color:var(--dim); }
+input:focus{ outline:none; border-color:var(--teal); background:#0c1419; }
+.pin{ width:56px; } #scanCidr{ width:168px; }
+
+.top { border-bottom:1px solid var(--line); display:flex; align-items:center; gap:1rem;
+       flex-wrap:wrap; padding:.55rem 0; position:sticky; top:0; background:var(--bg); z-index:5; }
+.top .h{font-weight:700; color:#eef3f7;} .top .sp{flex:1;}
+
+/* attention line — only for FAIL tracked devices */
+#attention{margin-top:.7rem; padding:.4rem .6rem; border:1px solid #3a2326; background:#160f10;
+           display:flex; align-items:center; gap:.6rem; flex-wrap:wrap;}
+#attention[hidden]{display:none;}
+.att-tag{background:var(--bad); color:#180b0b; font-weight:700; padding:0 .45rem;}
+.att-item{white-space:nowrap; color:var(--fg);}
+
+section{margin-top:.85rem;}
+.sec-head{display:flex; align-items:center; gap:.7rem; margin-bottom:.35rem;}
+.cap{display:inline-block; background:var(--cap-bg); color:var(--cap-fg); font-weight:700; letter-spacing:.06em; padding:0 .55rem; margin-bottom:.25rem;}
+/* In flex heads the cap shares a row with controls; those manage their own gap. */
+.sec-head .cap,.dlg-head .cap{margin-bottom:0;}
+.n{color:var(--dim);} .sp{flex:1;}
+.cols{display:grid; grid-template-columns:1fr 1fr; gap:0 2.2rem;}
+@media (max-width:760px){.cols{grid-template-columns:1fr;}}
+
+.m{display:grid; grid-template-columns:64px 1fr auto; gap:.6rem; align-items:baseline; padding:.08rem 0;}
+.m .lbl{color:var(--dim);}
+.bar{letter-spacing:-1px; white-space:nowrap;}
+.m .num{text-align:right; min-width:92px;}
+.cores{display:grid; grid-template-columns:1fr 1fr; gap:0 1.6rem;}
+.kv2{display:grid; grid-template-columns:92px 1fr; gap:0 .6rem;} .kv2 .k{color:var(--dim); white-space:nowrap;}
+
+.tbl-wrap{overflow-x:auto; -webkit-overflow-scrolling:touch;}
+.tbl{min-width:560px;}
+.th,.dev-row{display:grid; gap:.5rem; align-items:center; padding:.14rem .25rem;}
+/* Fluid columns: NAME/IP/MAC/VENDOR flex (minmax) so they reflow with width;
+   compact fixed widths for the status/signal/action cells. */
+.t-grid{grid-template-columns:24px minmax(84px,1.3fr) minmax(86px,1fr) minmax(94px,1.1fr) minmax(54px,1fr) 42px 50px 50px 50px 46px;}
+.c-grid{grid-template-columns:50px minmax(84px,1.2fr) minmax(86px,1fr) minmax(94px,1.1fr) minmax(54px,1fr) 42px 54px;}
+.s-grid{grid-template-columns:50px minmax(86px,1fr) minmax(94px,1.1fr) minmax(54px,1fr) 42px 54px;}
+/* grid items must allow shrinking for ellipsis to engage */
+.th>span,.dev-row>span{min-width:0;}
+.th{color:var(--dim); border-bottom:1px solid var(--line); font-weight:700;}
+.dev-row{border-bottom:1px solid #0b0f13;}
+.dev-row:hover{background:#0d1318;}
+.nm{color:#e3eaf0; font-weight:600;} .ell{overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+.col-c{text-align:center;}
+.empty{color:var(--dim); padding:.4rem .25rem;}
+
+.probes{padding:.05rem 0 .3rem 1.6rem; border-bottom:1px solid #0b0f13; background:#070b0e;}
+.probes.editing{background:#0a1116;}
+/* compact, content-width watchdog rows: ● tcp:80 / open / 2ms */
+.probe{display:flex; align-items:center; gap:.4rem; padding:.05rem 0; color:var(--fg);}
+.probe .psep{color:var(--dimmer);}
+.probe .pdot{width:10px; text-align:center;}
+.addrow{display:flex; align-items:center; gap:.4rem; padding:.12rem 0; color:var(--dim);}
+
+.srow{display:flex; align-items:center; gap:.7rem; flex-wrap:wrap; margin-bottom:.4rem;}
+.scan-div{border-top:1px solid var(--line); margin:.5rem 0 .3rem; padding-top:.3rem; color:var(--dim);}
+.res .dev-row:last-child{border-bottom:none;}
+
+.svc-line span{margin-right:1.4rem; white-space:nowrap;}
+.g{display:inline-block; width:8px; height:8px; margin-right:.35rem; vertical-align:middle;}
+footer{margin-top:1rem; padding-top:.5rem; border-top:1px solid var(--line); color:var(--dim);}
+
+/* modal */
+.modal{position:fixed; inset:0; background:rgba(0,0,0,.62); display:flex; align-items:center; justify-content:center; z-index:50;}
+.modal[hidden]{display:none;}
+.dlg{background:var(--bg); border:1px solid #2b3744; min-width:420px; max-width:92vw; box-shadow:0 10px 44px #000b;}
+.dlg-head{display:flex; align-items:center; gap:.6rem; padding:.45rem .55rem; border-bottom:1px solid var(--line);}
+.dlg-body{padding:.85rem .7rem .95rem;}
+#modalBar{font-size:14px; letter-spacing:-1px; white-space:nowrap;}
+.wstat{padding-top:.1rem;}
+.wrow{display:flex; gap:1rem; padding:.13rem 0;}
+.wrow .wl{min-width:90px; color:var(--dim);}
+.wsep{border-top:1px solid var(--line); margin:.5rem 0 .4rem;}
+.drow{background:#0a1116;} .drow input{width:100%;}
+.err{border-color:var(--bad)!important;}
+
+#freshness.stale{color:var(--warn);}
+
+/* ---- mobile-first touch refinements ---- */
+@media (max-width:760px){
+  .wrap{padding:0 .5rem;}
+  .top{gap:.5rem .8rem; font-size:12px;}
+  .cores{grid-template-columns:1fr;}
+  /* larger tap targets for bracketed commands without changing their look */
+  .cmd{display:inline-block; padding:.25rem .15rem; margin:-.25rem 0;}
+  .dlg{min-width:0; width:94vw;}
+  .tbl-wrap{ position:relative; }
+}

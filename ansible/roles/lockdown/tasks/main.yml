@@ -1,0 +1,49 @@
+---
+# Independent, out-of-band proof that key-only login works, BEFORE we disable
+# password auth. Runs from the control node with publickey auth forced.
+- name: Prove key-only SSH login works
+  delegate_to: localhost
+  become: false
+  vars:
+    # Prefer the captured connection IP (survives the hostname change); fall back
+    # to the name only if it wasn't captured.
+    target: "{{ box_addr if (box_addr | default('')) | length > 0 else (ansible_host | default(inventory_hostname)) }}"
+  ansible.builtin.command:
+    argv:
+      - ssh
+      - -i
+      - "{{ admin_private_key }}"
+      - -o
+      - BatchMode=yes
+      - -o
+      - StrictHostKeyChecking=accept-new
+      - -o
+      - PreferredAuthentications=publickey
+      - -o
+      - ConnectTimeout=10
+      - "{{ admin_user }}@{{ target }}"
+      - "true"
+  register: key_login
+  changed_when: false
+  failed_when: false
+
+- name: Disable password authentication (key login proven)
+  ansible.builtin.copy:
+    dest: /etc/ssh/sshd_config.d/20-no-password.conf
+    mode: "0644"
+    validate: "sshd -t -f %s"
+    content: |
+      # Managed by Ansible (lockdown role). Written only after an out-of-band
+      # key-only login succeeded, so this cannot strand the box.
+      PasswordAuthentication no
+      KbdInteractiveAuthentication no
+  when: key_login.rc == 0
+  notify: Reload sshd
+
+- name: Fail loudly if key login could not be proven
+  ansible.builtin.fail:
+    msg: >
+      Key-only SSH login to {{ ansible_host | default(inventory_hostname) }} failed
+      (rc={{ key_login.rc }}). Password auth has been LEFT ENABLED to avoid a
+      lockout. Check admin_private_key / puck-admin.pub, then re-run.
+  when: key_login.rc != 0

@@ -1,0 +1,5 @@
+---
+# Debian codename for the Tailscale apt repo. Defaults to the box's release, but
+# pin it (e.g. to a known-good codename) if pkgs.tailscale.com lags a fresh
+# Debian release and the keyring/list fetch starts 404ing.
+tailscale_repo_release: "{{ ansible_distribution_release }}"

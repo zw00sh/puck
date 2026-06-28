@@ -1,0 +1,100 @@
+---
+- name: Ensure python3 is present (raw, before any module needs it)
+  ansible.builtin.raw: >
+    command -v python3 >/dev/null ||
+    (apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y python3)
+  changed_when: false
+
+- name: Gather facts now that python3 exists
+  ansible.builtin.setup:
+
+- name: Install the dedicated public key for {{ admin_user }}
+  ansible.posix.authorized_key:
+    user: "{{ admin_user }}"
+    key: "{{ lookup('file', admin_public_key) }}"
+    state: present
+    exclusive: false
+
+- name: Prefer key auth for the rest of the run
+  # The key is now authorized; pin it as the connection method so the password
+  # change below can't strand a mid-run reconnect on the old factory password.
+  ansible.builtin.set_fact:
+    ansible_ssh_private_key_file: "{{ admin_private_key }}"
+
+- name: Passwordless sudo for {{ admin_user }}
+  ansible.builtin.copy:
+    dest: "/etc/sudoers.d/010-{{ admin_user }}"
+    content: "{{ admin_user }} ALL=(ALL) NOPASSWD:ALL\n"
+    mode: "0440"
+    validate: "visudo -cf %s"
+
+- name: Set the serial-console / break-glass password for {{ admin_user }}
+  # Required and asserted in site.yml; sourced from group_vars/all/secrets.yml.
+  # The per-host salt makes the hash deterministic, so re-runs are idempotent.
+  ansible.builtin.user:
+    name: "{{ admin_user }}"
+    password: "{{ pi_password | password_hash('sha512', (inventory_hostname | hash('sha256'))[:16]) }}"
+  no_log: true
+
+- name: Set hostname
+  ansible.builtin.hostname:
+    name: "{{ ts_hostname }}"
+
+- name: Keep /etc/hosts in sync with the hostname (avoids sudo resolve warnings)
+  ansible.builtin.lineinfile:
+    path: /etc/hosts
+    regexp: '^127\.0\.1\.1\b'
+    line: "127.0.1.1 {{ ts_hostname }}"
+    state: present
+
+- name: Pre-provision IP-forwarding sysctls (subnet routing deferred; knobs ready)
+  ansible.posix.sysctl:
+    name: "{{ item }}"
+    value: "1"
+    sysctl_set: true
+    state: present
+    reload: true
+  loop:
+    - net.ipv4.ip_forward
+    - net.ipv6.conf.all.forwarding
+
+# systemd-sysctl applies the persisted values too early — on this image IPv6
+# all.forwarding is reset during interface bring-up, so after a reboot Tailscale
+# reports "IP forwarding disabled" until the playbook is re-run. Re-assert it
+# once the network is up. (Verified: the value sticks once set post-boot.)
+- name: Install the IP-forwarding re-assert unit (survives reboot)
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/ip-forwarding.service
+    mode: "0644"
+    content: |
+      [Unit]
+      Description=Re-assert IP forwarding for Tailscale relay (after network-online)
+      Wants=network-online.target
+      After=network-online.target
+
+      [Service]
+      Type=oneshot
+      RemainAfterExit=yes
+      ExecStart=/usr/sbin/sysctl -w net.ipv4.ip_forward=1 -w net.ipv6.conf.all.forwarding=1
+
+      [Install]
+      WantedBy=multi-user.target
+
+- name: Enable and run the IP-forwarding re-assert service
+  ansible.builtin.systemd:
+    name: ip-forwarding.service
+    enabled: true
+    state: started
+    daemon_reload: true
+
+- name: Base sshd hardening (root off, pubkey on; password auth left for lockdown)
+  ansible.builtin.copy:
+    dest: /etc/ssh/sshd_config.d/10-hardening.conf
+    mode: "0644"
+    validate: "sshd -t -f %s"
+    content: |
+      # Managed by Ansible (provision role). Password auth is handled by the
+      # lockdown role's 20-no-password.conf, gated on a proven key login.
+      PermitRootLogin no
+      PubkeyAuthentication yes
+  notify: Reload sshd

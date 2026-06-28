@@ -1,0 +1,5 @@
+# Local SSH key material lives here (puck-admin + puck-admin.pub) — NEVER commit.
+# Generate it with the keygen step in ansible/README.md. This .gitignore ignores
+# everything in the dir except itself, so the (otherwise empty) folder is tracked.
+*
+!.gitignore

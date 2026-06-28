@@ -1,0 +1,40 @@
+# Large binary images — never commit
+*.img
+*.img.gz
+*.img.xz
+
+# Per-host instance data and secrets (keep the .example templates)
+site/*.env
+!site/*.env.example
+*.key
+*.pub
+*.used
+
+# Build scratch / mount points
+build/
+mnt/
+*.log
+
+# Ansible scratch
+*.retry
+
+# Tailscale auth keys (per-host secrets)
+*.tskey
+
+# Admin SSH keypair lives in keys/ (self-ignored via keys/.gitignore).
+
+# Ansible secrets (auto-loaded vars); keep the .example template tracked
+ansible/group_vars/all/secrets.yml
+
+# Your fleet roster (per-user); keep the .example template tracked
+ansible/inventory/hosts.yml
+
+# puckview OUI build cache (the IEEE CSV; oui.txt is regenerated from it)
+puckview/internal/oui/.oui-cache.csv
+
+# puckview build output (built by `make arm64`, deployed by ansible)
+puckview/dist/
+
+# Maintainer working docs — kept locally, not published
+RECOVERY.md
+REQUIREMENTS.md

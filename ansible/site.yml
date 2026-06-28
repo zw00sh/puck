@@ -1,0 +1,87 @@
+---
+# Provision a puck (NanoPi Zero2 board) from stock Debian Core to an enrolled,
+# hardened Tailscale exit node. Safe to re-run (idempotent). Provision one box at a
+# time on first contact — see inventory/hosts.yml for the exact commands.
+
+- name: Select working credentials (key if provisioned, factory password if fresh)
+  hosts: pucks
+  gather_facts: false
+  tasks:
+    # Offer the key first AND the factory password as fallback, in ONE connection.
+    # ssh tries publickey (works on a provisioned box), then falls back to the
+    # factory password (fresh box) within the same connection. A connection that
+    # ultimately authenticates is NOT an auth failure, so OpenSSH 9.8+
+    # PerSourcePenalties never fires. (The old separate key-only probe failed auth
+    # outright, which DID trip the penalty and reset the next connection.)
+    # The factory login user is admin_user (pi), so there's a single username to offer.
+    # tags: always so a tag-scoped run (e.g. --tags puckview) still establishes the
+    # connection identity — without it, ansible loses the key and can't reach a
+    # locked-down box.
+    - name: Provide key + factory-password fallback for the connection
+      ansible.builtin.set_fact:
+        ansible_user: "{{ admin_user }}"
+        ansible_ssh_private_key_file: "{{ admin_private_key }}"
+        ansible_ssh_pass: "{{ factory_password }}"
+        ansible_become_pass: "{{ factory_password }}"
+      tags: always
+
+    - name: Report target
+      ansible.builtin.debug:
+        msg: "{{ inventory_hostname }} via {{ ansible_host | default(inventory_hostname) }} (key, factory-password fallback)"
+
+    # Capture the address THIS connection is on (SSH_CONNECTION server-IP) so the
+    # lockdown probe targets an IP, not a name that the hostname change may break.
+    # raw (not command) because python3 isn't bootstrapped yet on a fresh box.
+    - name: Capture the live connection address (immune to the hostname change)
+      ansible.builtin.raw: printf 'BOXADDR=%s\n' "$(echo $SSH_CONNECTION | cut -d' ' -f3)"
+      register: ssh_conn
+      changed_when: false
+
+    - name: Stash that address for the lockdown probe
+      ansible.builtin.set_fact:
+        box_addr: "{{ ssh_conn.stdout_lines | select('search', '^BOXADDR=') | first | regex_replace('^BOXADDR=', '') | trim }}"
+
+- name: Base provision + Tailscale enrollment
+  hosts: pucks
+  gather_facts: false
+  become: true
+  pre_tasks:
+    # pi_password is the serial-console / break-glass login — required, and sourced
+    # from group_vars/all/secrets.yml (gitignored). Fail fast with a clear message
+    # rather than silently provisioning a box with no recovery password.
+    - name: Require pi_password to be set
+      ansible.builtin.assert:
+        that: pi_password | default('') | length > 0
+        fail_msg: >-
+          pi_password is not set. Add it to ansible/group_vars/all/secrets.yml
+          (copy secrets.yml.example), or pass -e pi_password=... for a one-off.
+        quiet: true
+  roles:
+    - provision
+    - watchdog
+    - unattended_upgrades
+    - docker
+    # Skipped entirely when no auth key is supplied, leaving any existing
+    # enrollment untouched (password-only re-runs don't disturb Tailscale).
+    - role: tailscale
+      when: ts_authkey | default('') | length > 0
+    # Optional ad-blocking resolver; disabled by default. Enable per run with
+    # -e pihole_enabled=true (and set pihole_admin_password to pin the admin pw).
+    - role: pihole
+      when: pihole_enabled | default(false)
+    # puckview — WoL + LAN-presence + diagnostics dashboard. Runs last so its
+    # catalogue/serve sees every enabled service, and claims the bare http://<host>
+    # (:80) front door.
+    - role: puckview
+      when: puckview_enabled | default(true)
+      tags: puckview
+
+# Lockdown runs LAST and only disables password auth after an independent
+# key-login probe succeeds — so a one-shot run still hardens, but a bad key
+# can never lock you out.
+- name: Lockdown (disable factory creds once key login is proven)
+  hosts: pucks
+  gather_facts: false
+  become: true
+  roles:
+    - lockdown

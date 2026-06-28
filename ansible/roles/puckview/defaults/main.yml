@@ -1,0 +1,40 @@
+---
+puckview_enabled: true
+
+# Binary source. By default the role downloads the pinned GitHub release; the
+# puck never needs a Go toolchain. For dev/offline/pre-release, build locally
+# (`cd puckview && make arm64`) and set puckview_use_local_build=true to copy it
+# instead. See puckview/README.md.
+puckview_repo: "zw00sh/puck"               # release host + unit Documentation= link
+puckview_goarch: "arm64"                    # NanoPi Zero2 target architecture
+puckview_version: "1.0.0"                   # pinned release tag → puckview-v{{ version }}
+puckview_sha256: ""                         # optional integrity pin for the download
+# Override: deploy a locally-built binary instead of the release.
+puckview_use_local_build: false
+puckview_src_dir: "{{ playbook_dir }}/../puckview"          # the Go module dir
+puckview_build_output: "{{ puckview_src_dir }}/dist/puckview-linux-{{ puckview_goarch }}"
+
+puckview_dir: /opt/puckview
+puckview_data_dir: /var/lib/puckview
+puckview_user: puckview
+
+# Loopback bind (doctrine) + tailnet exposure. puckview takes :80 — the bare
+# hostname — as the puck's front door.
+puckview_bind_ip: "127.0.0.1"
+puckview_port: 8091
+puckview_serve_port: 80
+
+# rDNS resolver for name lookups. Empty => puckview auto-uses the default gateway
+# (never the box's own MagicDNS resolver, which would return tailnet IPs).
+puckview_lan_resolver: ""
+
+# Service catalogue — the one baked-in list (devices are dynamic/app-owned).
+# Enable a service and it appears here; change its serve port and the link + health
+# check follow. `port` is the tailnet serve port AND the loopback backend port
+# (our services bind loopback at the same port).
+puckview_services:
+  - name: "Pi-hole"
+    detail: "DNS admin"
+    enabled: "{{ pihole_enabled | default(false) }}"
+    port: "{{ pihole_serve_port | default(8080) }}"
+    path: "/admin"

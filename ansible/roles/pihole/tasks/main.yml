@@ -1,0 +1,101 @@
+---
+# --- Free host :53 from systemd-resolved's stub listener (if present) -----------
+# Pi-hole on host networking needs 0.0.0.0:53. If systemd-resolved is running its
+# stub on 127.0.0.53:53, that overlaps and the container fails to bind. Disable the
+# stub and repoint resolv.conf at resolved's upstream file so HOST name resolution
+# keeps working independently of Pi-hole (no chicken-and-egg on the container).
+- name: Check whether systemd-resolved is active (it would hold :53)
+  ansible.builtin.command: systemctl is-active systemd-resolved
+  register: pihole_resolved
+  changed_when: false
+  failed_when: false
+
+- name: Ensure the resolved drop-in directory exists
+  ansible.builtin.file:
+    path: /etc/systemd/resolved.conf.d
+    state: directory
+    mode: "0755"
+  when: pihole_resolved.stdout == "active"
+
+- name: Disable the systemd-resolved DNS stub listener
+  ansible.builtin.copy:
+    dest: /etc/systemd/resolved.conf.d/10-pihole-no-stub.conf
+    mode: "0644"
+    content: |
+      [Resolve]
+      DNSStubListener=no
+  when: pihole_resolved.stdout == "active"
+  notify: Restart systemd-resolved
+
+- name: Point host resolv.conf at resolved's upstream file (not the disabled stub)
+  ansible.builtin.file:
+    src: /run/systemd/resolve/resolv.conf
+    dest: /etc/resolv.conf
+    state: link
+    force: true
+  when: pihole_resolved.stdout == "active"
+
+# Apply the resolved change BEFORE the container tries to bind :53.
+- name: Flush handlers so :53 is free before Pi-hole starts
+  ansible.builtin.meta: flush_handlers
+
+# --- Bring up Pi-hole ----------------------------------------------------------
+- name: Create the Pi-hole config directory
+  ansible.builtin.file:
+    path: "{{ pihole_dir }}/etc-pihole"
+    state: directory
+    mode: "0755"
+
+- name: Template the Pi-hole compose file
+  ansible.builtin.template:
+    src: docker-compose.yml.j2
+    dest: "{{ pihole_dir }}/docker-compose.yml"
+    mode: "0644"
+
+- name: Bring up Pi-hole
+  community.docker.docker_compose_v2:
+    project_src: "{{ pihole_dir }}"
+    state: present
+    pull: missing
+
+- name: Note when no admin password was pinned
+  ansible.builtin.debug:
+    msg: >-
+      No pihole_admin_password set — Pi-hole generated a random admin password.
+      Read it with `docker logs pihole | grep -i password`, or set
+      pihole_admin_password (secrets.yml / -e) to pin one.
+  when: not (pihole_admin_password | length > 0)
+
+# --- Expose the admin UI on the tailnet over HTTP (separate serve port) ---------
+- name: Read Tailscale backend state
+  ansible.builtin.command: tailscale status --json
+  register: pihole_ts_status
+  changed_when: false
+  failed_when: false
+
+- name: Note whether the node is on the tailnet
+  ansible.builtin.set_fact:
+    pihole_ts_running: "{{ (pihole_ts_status.stdout | default('{}') | from_json).BackendState | default('') == 'Running' }}"
+
+- name: Read current tailscale serve config
+  ansible.builtin.command: tailscale serve status
+  register: pihole_ts_serve
+  changed_when: false
+  failed_when: false
+  when: pihole_ts_running
+
+- name: Expose the Pi-hole admin UI on the tailnet over HTTP
+  ansible.builtin.command: "tailscale serve --bg --http={{ pihole_serve_port }} {{ pihole_web_port }}"
+  when:
+    - pihole_ts_running
+    - (pihole_web_bind ~ ':' ~ pihole_web_port) not in (pihole_ts_serve.stdout | default(''))
+  changed_when: true
+
+- name: Report when Tailscale serve was skipped
+  ansible.builtin.debug:
+    msg: >-
+      Node not on the tailnet — Pi-hole is up on {{ pihole_web_bind }}:{{ pihole_web_port }}
+      but skipped `tailscale serve`. Enroll the node (supply ts_authkey) and re-run.
+      DNS still answers on :53 regardless. The admin UI will be at
+      http://{{ inventory_hostname }}:{{ pihole_serve_port }}/admin once served.
+  when: not pihole_ts_running

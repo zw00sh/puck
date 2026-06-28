@@ -1,0 +1,10 @@
+# build artifacts
+/puckview
+/puckview-linux-arm64
+/puckview-*-*
+/dist/
+
+# local dev data
+*.db
+*.db-wal
+*.db-shm

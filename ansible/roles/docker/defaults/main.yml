@@ -1,0 +1,8 @@
+---
+# Docker apt repo architecture (Debian uses arm64/amd64, not aarch64/x86_64).
+docker_apt_arch: "{{ 'arm64' if ansible_architecture == 'aarch64' else 'amd64' }}"
+
+# The FriendlyElec rootfs is itself an overlay (overlay on / ), so Docker's
+# native overlay2 can't create whiteout device-nodes. fuse-overlayfs does it in
+# userspace and works on top of an overlay root.
+docker_storage_driver: fuse-overlayfs

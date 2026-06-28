@@ -1,0 +1,19 @@
+services:
+  pihole:
+    container_name: pihole
+    image: pihole/pihole:{{ pihole_version }}
+    # host networking so DNS (:53) is reachable on the LAN and tailnet interfaces.
+    network_mode: host
+    restart: unless-stopped
+    environment:
+      - TZ={{ pihole_timezone }}
+{% if pihole_admin_password %}
+      - FTLCONF_webserver_api_password={{ pihole_admin_password }}
+{% endif %}
+      # Admin UI on loopback only (tailnet-only via `tailscale serve`); served on
+      # its own port (the bare :80 is puckview). Format is [ip:]port.
+      - FTLCONF_webserver_port={{ pihole_web_bind }}:{{ pihole_web_port }}
+      # Answer DNS on all interfaces (incl. the tailnet). Tailnet ACL is the gate.
+      - FTLCONF_dns_listeningMode={{ pihole_listening_mode }}
+    volumes:
+      - ./etc-pihole:/etc/pihole   # FTL database + config (persists blocklists, settings)

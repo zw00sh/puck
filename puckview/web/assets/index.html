@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>puckview</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div class="wrap">
+
+  <div class="top">
+    <span class="h" id="host">puckview</span>
+    <span class="dim">up <span class="fg" id="uptime">—</span></span>
+    <span class="dim"><span id="ethifLabel">eth0</span> <span class="fg" id="ethip">—</span> · ts <span class="fg" id="tsip">—</span></span>
+    <span class="sp"></span>
+    <span class="dim" id="freshness">data as at <span id="clock">--:--:--</span></span>
+  </div>
+
+  <div id="attention" hidden></div>
+
+  <!-- Diagnostics: left column SOC+NETWORK, right column USAGE+TAILSCALE -->
+  <section><div class="cols">
+    <div>
+      <div class="cap">SOC</div>
+      <div class="m"><span class="lbl">CPU</span><span class="bar" id="cpuBar"></span><span class="num" id="cpuNum"></span></div>
+      <div class="cores" id="cores"></div>
+      <div class="m"><span class="lbl">LOAD</span><span class="bar dim">1m 5m 15m</span><span class="num" id="loadNum">—</span></div>
+      <div class="m"><span class="lbl">TEMP</span><span class="bar" id="tempBar"></span><span class="num" id="tempNum"></span></div>
+
+      <div class="cap" style="margin-top:.85rem">NETWORK</div>
+      <div class="m"><span class="lbl" id="netIf">eth0</span><span class="bar"><span class="ok" id="rxBar"></span></span><span class="num"><span class="ok" id="rxNum"></span> <span class="dim">rx</span></span></div>
+      <div class="m"><span class="lbl"></span><span class="bar"><span class="warn" id="txBar"></span></span><span class="num"><span class="warn" id="txNum"></span> <span class="dim">tx</span></span></div>
+    </div>
+    <div>
+      <div class="cap">USAGE</div>
+      <div class="m"><span class="lbl">MEM</span><span class="bar" id="memBar"></span><span class="num" id="memNum"></span></div>
+      <div class="m"><span class="lbl">SWAP</span><span class="bar" id="swapBar"></span><span class="num" id="swapNum"></span></div>
+      <div class="m"><span class="lbl">DISK</span><span class="bar" id="diskBar"></span><span class="num" id="diskNum"></span></div>
+
+      <div class="cap" style="margin-top:.85rem">TAILSCALE</div>
+      <div class="kv2">
+        <span class="k">state</span><span id="tsState" class="dim">—</span>
+        <span class="k">name</span><span id="tsName" class="dim">—</span>
+        <span class="k">magicdns</span><span id="tsMagic" class="dim">—</span>
+        <span class="k">exit node</span><span id="tsExit" class="dim">—</span>
+        <span class="k">dns</span><span id="tsDns" class="dim">—</span>
+      </div>
+    </div>
+  </div></section>
+
+  <!-- TRACKED -->
+  <section>
+    <div class="sec-head">
+      <span class="cap">TRACKED</span><span class="n" id="trkN"></span>
+      <span class="sp"></span><span class="cmd" id="addDevBtn">[add]</span>
+    </div>
+    <div class="tbl-wrap"><div class="tbl">
+      <div class="th t-grid"><span class="col-c">ST</span><span>NAME</span><span>IP</span><span>MAC</span><span>VENDOR</span><span>SEEN</span><span>ARP</span><span>ICMP</span><span class="col-c"></span><span class="col-c"></span></div>
+      <div id="tracked"></div>
+    </div></div>
+  </section>
+
+  <!-- DISCOVERY — tabbed -->
+  <section>
+    <div class="sec-head">
+      <span class="cap" id="discCap">ARP CACHE</span>
+      <span class="sp"></span><span class="cmd" id="discTab">[scan]</span>
+    </div>
+    <div id="cacheView">
+      <div class="tbl-wrap"><div class="tbl">
+        <div class="th c-grid"><span>ARP</span><span>HOST</span><span>IP</span><span>MAC</span><span>VENDOR</span><span>AGE</span><span class="col-c"></span></div>
+        <div id="cache"></div>
+      </div></div>
+    </div>
+    <div id="scanView" hidden>
+      <div class="srow"><span class="dim">target</span><input id="scanCidr" value=""><span class="cmd" id="runScan">[run]</span></div>
+      <div class="scan-div">results</div>
+      <div class="tbl-wrap"><div class="res" id="scanRes"><span class="dim">— run a sweep to discover hosts —</span></div></div>
+    </div>
+  </section>
+
+  <!-- SERVICES -->
+  <section>
+    <div class="cap">SERVICES</div>
+    <div class="svc-line" id="services"><span class="dim">—</span></div>
+  </section>
+
+  <footer><span class="dim">puckview · <span id="ver">dev</span> · Go + go:embed + SSE</span></footer>
+</div>
+
+<div class="modal" id="modal" hidden>
+  <div class="dlg">
+    <div class="dlg-head"><span class="cap" id="modalTitle">WAKE</span><span class="sp"></span><span class="cmd" id="modalX">[close]</span></div>
+    <div class="dlg-body" id="modalBody"></div>
+  </div>
+</div>
+
+<script src="/static/app.js"></script>
+</body>
+</html>

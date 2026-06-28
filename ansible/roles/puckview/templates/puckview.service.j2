@@ -1,0 +1,36 @@
+[Unit]
+# {{ ansible_managed }}
+Description=puckview — WoL + LAN presence + diagnostics
+Documentation=https://github.com/{{ puckview_repo }}
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User={{ puckview_user }}
+EnvironmentFile=/etc/puckview.env
+ExecStart={{ puckview_dir }}/puckview
+WorkingDirectory={{ puckview_dir }}
+
+# L2 Wake-on-LAN frames (ethertype 0x0842) and ICMP echo need CAP_NET_RAW.
+# Kernel-assisted ARP needs no capability. Nothing else is granted.
+AmbientCapabilities=CAP_NET_RAW
+CapabilityBoundingSet=CAP_NET_RAW
+NoNewPrivileges=true
+
+# Hardening — puckview only needs to read /proc, /sys and write its data dir.
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths={{ puckview_data_dir }}
+PrivateTmp=true
+ProtectControlGroups=true
+# AF_NETLINK is required: the kernel neigh-cache read (RTM_GETNEIGH, with NUD
+# state + last-seen) and interface/route auto-detection both go over netlink.
+# Without it both silently degrade to /proc (no REACHABLE state, no last-seen).
+RestrictAddressFamilies=AF_UNIX AF_INET AF_NETLINK AF_PACKET
+
+Restart=on-failure
+RestartSec=10s
+
+[Install]
+WantedBy=multi-user.target
