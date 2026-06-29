@@ -45,7 +45,7 @@ section{margin-top:.85rem;}
 @media (max-width:760px){.cols{grid-template-columns:1fr;}}
 
 .m{display:grid; grid-template-columns:64px 1fr auto; gap:.6rem; align-items:baseline; padding:.08rem 0;}
-.m .lbl{color:var(--dim);}
+.m .lbl{color:var(--dim); white-space:nowrap;}
 .bar{letter-spacing:-1px; white-space:nowrap;}
 .m .num{text-align:right; min-width:92px;}
 .cores{display:grid; grid-template-columns:1fr 1fr; gap:0 1.6rem;}
@@ -54,10 +54,13 @@ section{margin-top:.85rem;}
 .tbl-wrap{overflow-x:auto; -webkit-overflow-scrolling:touch;}
 .tbl{min-width:560px;}
 .th,.dev-row{display:grid; gap:.5rem; align-items:center; padding:.14rem .25rem;}
-/* Fluid columns: NAME/IP/MAC/VENDOR flex (minmax) so they reflow with width;
-   compact fixed widths for the status/signal/action cells. */
-.t-grid{grid-template-columns:24px minmax(84px,1.3fr) minmax(86px,1fr) minmax(94px,1.1fr) minmax(54px,1fr) 42px 50px 50px 50px 46px;}
-.c-grid{grid-template-columns:50px minmax(84px,1.2fr) minmax(86px,1fr) minmax(94px,1.1fr) minmax(54px,1fr) 42px 54px;}
+/* TRACKED and ARP CACHE line up on IP/MAC/VENDOR. The lead block (col1 + name)
+   sums to 180px in both — TRACKED's 24px status dot + 156px NAME equals CACHE's
+   50px ARP-state + 130px HOST — so IP starts at the same x. IP/MAC are fixed and
+   identical; VENDOR is the flexible column (same start, fills remaining width).
+   Compact fixed widths for the status/signal/action cells. */
+.t-grid{grid-template-columns:24px 156px 126px 146px minmax(120px,1fr) 42px 50px 50px 50px 46px;}
+.c-grid{grid-template-columns:50px 130px 126px 146px minmax(120px,1fr) 42px 54px;}
 .s-grid{grid-template-columns:50px minmax(86px,1fr) minmax(94px,1.1fr) minmax(54px,1fr) 42px 54px;}
 /* grid items must allow shrinking for ellipsis to engage */
 .th>span,.dev-row>span{min-width:0;}
