@@ -7,7 +7,7 @@ puckview_enabled: true
 # instead. See puckview/README.md.
 puckview_repo: "zw00sh/puck"               # release host + unit Documentation= link
 puckview_goarch: "arm64"                    # NanoPi Zero2 target architecture
-puckview_version: "1.0.0"                   # pinned release tag → puckview-v{{ version }}
+puckview_version: "1.0.1"                   # pinned release tag → puckview-v{{ version }}
 puckview_sha256: ""                         # optional integrity pin for the download
 # Override: deploy a locally-built binary instead of the release.
 puckview_use_local_build: false
