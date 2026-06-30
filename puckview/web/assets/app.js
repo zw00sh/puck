@@ -93,18 +93,21 @@ function trackedRow(d) {
   const probes = d.probes || [];
   const tcp = probes.map(p => probeRow(d.mac, p, ed)).join('');
   const editrow = ed ? `
-    <div class="addrow"><span>tcp:<input id="ap_${d.mac}" placeholder="port" inputmode="numeric" class="pin"></span><span class="cmd" onclick="addProbe('${d.mac}')">[add]</span></div>
-    <div class="addrow"><span class="sp"></span><span class="cmd danger" onclick="untrack('${d.mac}')">[untrack]</span><span class="cmd" onclick="toggleEdit('${d.mac}')">[done]</span></div>` : '';
+    <div class="addrow"><span class="pdot"></span><span>tcp:<input id="ap_${d.mac}" placeholder="port" inputmode="numeric" class="pin"></span><span class="cmd" onclick="addProbe('${d.mac}')">[add]</span></div>
+    <div class="addrow"><span class="sp"></span><span class="cmd danger" onclick="untrack('${d.mac}')">[untrack]</span></div>` : '';
   const probesBlock = (ed || probes.length) ? `<div class="probes ${ed ? 'editing' : ''}">${tcp}${editrow}</div>` : '';
+  const nameCell = ed
+    ? `<input class="rin" value="${esc(d.name)}" maxlength="32" placeholder="name" onchange="renameDev('${d.mac}', this.value)">`
+    : `<span class="nm ell">${esc(d.name)}</span>`;
   return `
   <div class="dev-row t-grid">
     <span class="col-c">${liveDot(d)}</span>
-    <span class="nm ell">${esc(d.name)}</span><span class="ell">${esc(d.ip)}</span>
+    ${nameCell}<span class="ell">${esc(d.ip)}</span>
     <span class="dim ell">${esc(d.mac)}</span><span class="dim ell">${esc(d.vendor)}</span>
     <span>${seenCell(d)}</span>
     <span>${arpCell(d.arp)}</span><span>${icmpCell(d.icmp)}</span>
     <span class="col-c cmd" onclick="wake('${d.mac}')">[wake]</span>
-    <span class="col-c">${ed ? '' : `<span class="cmd" onclick="toggleEdit('${d.mac}')">[edit]</span>`}</span>
+    <span class="col-c cmd" onclick="toggleEdit('${d.mac}')">${ed ? '[done]' : '[edit]'}</span>
   </div>${probesBlock}`;
 }
 // Add-device draft: a form row with inputs that flow, and the actions grouped at
@@ -112,7 +115,7 @@ function trackedRow(d) {
 function draftRow() {
   return `<div class="dev-row drow" style="display:flex; gap:.5rem; align-items:center;">
     <span class="col-c dim" style="width:24px">+</span>
-    <input id="naName" placeholder="name (opt)" style="flex:1; min-width:78px">
+    <input id="naName" placeholder="name (opt)" maxlength="32" style="flex:1; min-width:78px">
     <input id="naIp" placeholder="192.168.x.x" style="flex:1; min-width:96px">
     <input id="naMac" placeholder="aa:bb:cc:dd:ee:ff" style="flex:1.3; min-width:120px">
     <span class="sp"></span>
@@ -174,6 +177,9 @@ window.rmProbe = (m, port) => api('DELETE', `/api/devices/${encMac(m)}/probes/${
 window.changePort = (m, oldPort, v) => { const n = parseInt(v, 10); if (!n || n === oldPort) return; api('DELETE', `/api/devices/${encMac(m)}/probes/${oldPort}`).then(() => api('POST', `/api/devices/${encMac(m)}/probes`, { port: n })); };
 window.untrack = m => { editing.delete(m); api('DELETE', `/api/devices/${encMac(m)}`); };
 window.track = (mac, ip, name) => api('POST', '/api/devices', { mac, ip, name });
+// Rename a tracked device; the server marks it manual so background rDNS won't
+// clobber it, and caps the length (mirrors the input's maxlength).
+window.renameDev = (m, v) => api('PATCH', `/api/devices/${encMac(m)}`, { name: v.trim() });
 
 // manual add (draft row + validation)
 const MAC_RE = /^([0-9a-fA-F]{2}[:\-]){5}[0-9a-fA-F]{2}$/;

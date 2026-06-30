@@ -99,6 +99,8 @@ footer{margin-top:1rem; padding-top:.5rem; border-top:1px solid var(--line); col
 .wrow .wl{min-width:90px; color:var(--dim);}
 .wsep{border-top:1px solid var(--line); margin:.5rem 0 .4rem;}
 .drow{background:#0a1116;} .drow input{width:100%;}
+/* inline rename input in the NAME cell when editing a tracked device */
+.rin{width:100%; padding:.01rem .35rem; color:#e3eaf0; font-weight:600;}
 .err{border-color:var(--bad)!important;}
 
 #freshness.stale{color:var(--warn);}

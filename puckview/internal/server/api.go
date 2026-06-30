@@ -33,6 +33,17 @@ func validIP(s string) bool {
 	return ip != nil && ip.To4() != nil
 }
 
+// maxNameLen caps a device display name (runes). DNS labels allow up to 63, but
+// 32 is ample for the dashboard and keeps the NAME column from overflowing.
+const maxNameLen = 32
+
+func clampName(s string) string {
+	if r := []rune(s); len(r) > maxNameLen {
+		return string(r[:maxNameLen])
+	}
+	return s
+}
+
 // GET /api/devices
 func (s *Server) handleListDevices(w http.ResponseWriter, r *http.Request) {
 	byMAC, _ := neighSnapshot()
@@ -57,6 +68,7 @@ func (s *Server) handleTrackDevice(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "invalid ip")
 		return
 	}
+	in.Name = clampName(in.Name)
 	if err := s.store.Add(store.Device{MAC: in.MAC, IP: in.IP, Name: in.Name}); err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
@@ -91,6 +103,10 @@ func (s *Server) handlePatchDevice(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	src := "manual"
+	if in.Name != nil {
+		n := clampName(*in.Name)
+		in.Name = &n
+	}
 	p := store.Patch{Name: in.Name, Link: in.Link, Notes: in.Notes, IP: in.IP}
 	if in.Name != nil {
 		p.NameSource = &src

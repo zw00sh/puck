@@ -4,7 +4,7 @@
 # deploying, run `make arm64` (cross-compiles for the puck and refreshes the OUI
 # table) — the role copies dist/puckview-linux-arm64 to the box.
 BINARY  := puckview
-VERSION ?= 1.0.1
+VERSION ?= 1.0.2
 GOARCH  ?= arm64
 LDFLAGS := -s -w -X main.version=$(VERSION)
 DIST    := dist/$(BINARY)-linux-$(GOARCH)
