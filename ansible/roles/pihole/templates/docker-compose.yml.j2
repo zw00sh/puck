@@ -7,9 +7,10 @@ services:
     restart: unless-stopped
     environment:
       - TZ={{ pihole_timezone }}
-{% if pihole_admin_password %}
+      # An empty value disables web/API auth (open dashboard) — the tailnet is
+      # the boundary, same as the other services. Set a non-empty password here
+      # (via secrets.yml) to require a login instead.
       - FTLCONF_webserver_api_password={{ pihole_admin_password }}
-{% endif %}
       # Admin UI on loopback only (tailnet-only via `tailscale serve`); served on
       # its own port (the bare :80 is puckview). Format is [ip:]port.
       - FTLCONF_webserver_port={{ pihole_web_bind }}:{{ pihole_web_port }}

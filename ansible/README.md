@@ -38,7 +38,7 @@ Host vars outrank role defaults, so only that puck enables it. For a one-off run
 |---|---|---|
 | `pi_password` | yes | `pi` account password (serial/break-glass login). The run aborts if unset. |
 | `ts_authkey` | no | Tailscale enrollment key. Empty leaves Tailscale untouched. |
-| `pihole_admin_password` | no | Pi-hole admin UI password. Blank lets Pi-hole generate one (`docker logs pihole`). |
+| `pihole_admin_password` | no | Pi-hole admin UI password. Empty (default) disables auth (open dashboard, tailnet-only); set a value to require a login. |
 
 Everything in `group_vars/all/` is merged automatically. `-e var=...` overrides
 any value for a single run.
