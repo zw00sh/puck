@@ -30,6 +30,33 @@ pucks:
 Host vars outrank role defaults, so only that puck enables it. For a one-off run,
 `-e pihole_enabled=true` does the same thing.
 
+### Subnet routing
+
+Make a puck a subnet router by listing the LANs it advertises to the tailnet:
+
+```yaml
+pucks:
+  hosts:
+    puck-home:
+      advertise_routes:
+        - 192.168.50.0/24
+```
+
+The tailscale role reconciles this with `tailscale set` (idempotent — it only
+re-sets on drift, and folds in the exit-node default routes so an exit node
+isn't seen as perpetual change). Two things happen out-of-band:
+
+- **Approval.** Advertised routes are inert until approved once in the admin
+  console (Machines → the puck → *Edit route settings*), or auto-approved via an
+  ACL `autoApprovers.routes` entry.
+- **Reachability.** The box must have an L3 path to the subnet (its own LAN, or a
+  route to it). Use canonical network addresses (`192.168.50.0/24`, not a host
+  address) — Tailscale normalises them, so a non-canonical value reads as drift.
+
+Peers that should use the route need `--accept-routes` (the pucks default to
+`accept_routes: false` per the SSH-jump doctrine; enable it where you want it).
+IP forwarding is already armed by the `provision` role, so no extra step there.
+
 ### Secrets
 
 `group_vars/all/secrets.yml` is auto-loaded (no CLI flags, no prompts):

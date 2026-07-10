@@ -37,6 +37,9 @@ all:
 #       hosts:
 #         puck-home:
 #           pihole_enabled: true          # run the optional Pi-hole role on this box
+#           advertise_routes:             # make this box a subnet router for these
+#             - 192.168.50.0/24           #   LANs (canonical CIDRs; needs one-time
+#                                         #   admin-console approval; see ansible/README.md)
 #         puck-parents:                   # (no options -> Pi-hole stays off)
 #
 # Equivalent one-off without editing this file:

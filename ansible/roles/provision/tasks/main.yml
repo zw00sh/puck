@@ -47,7 +47,7 @@
     line: "127.0.1.1 {{ ts_hostname }}"
     state: present
 
-- name: Pre-provision IP-forwarding sysctls (subnet routing deferred; knobs ready)
+- name: Enable IP-forwarding sysctls (for exit-node relay and subnet routing)
   ansible.posix.sysctl:
     name: "{{ item }}"
     value: "1"

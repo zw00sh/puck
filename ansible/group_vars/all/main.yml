@@ -28,6 +28,13 @@ ts_hostname: "{{ inventory_hostname }}"
 # are enrolled.
 advertise_exit_node: true
 accept_routes: false      # doctrine: reach LAN hosts via SSH jump / SOCKS, not subnet routes
+# Subnet routes this box advertises to the tailnet (it becomes a subnet router
+# for them). A list of canonical CIDRs, e.g. ["192.168.50.0/24"]. Empty => none.
+# Set per-host in the inventory. Advertised routes still need one-time approval
+# in the admin console (or an ACL autoApprover) before peers can use them, and
+# the box must have L3 reachability to the subnet. Use canonical network
+# addresses — Tailscale normalises them, so a non-canonical value reads as drift.
+advertise_routes: []
 
 # --- unattended security upgrades -----------------------------------------
 unattended_auto_reboot: true

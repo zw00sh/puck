@@ -50,3 +50,32 @@
   register: ts_up
   changed_when: ts_up.rc == 0
   no_log: true        # keep the auth key out of Ansible output/logs
+
+# --- Subnet router: advertise LAN routes to the tailnet --------------------
+# Config change after enrollment => `tailscale set`, never `up` (doctrine).
+# Fully idempotent: reconcile the node's advertised routes against the desired
+# set and only re-set on drift. Prefs store subnet routes AND the exit-node
+# default routes (0.0.0.0/0, ::/0) in one field, so both flags are passed
+# together and the exit-node defaults are folded into the comparison — otherwise
+# an exit node would look like perpetual drift. Advertised routes still need
+# one-time approval in the admin console (or an ACL autoApprover) to take effect.
+- name: Read current Tailscale prefs (advertised routes)
+  ansible.builtin.command: tailscale debug prefs
+  register: ts_prefs
+  changed_when: false
+  failed_when: false
+
+- name: Reconcile advertised subnet routes
+  ansible.builtin.command:
+    argv:
+      - tailscale
+      - set
+      - "--advertise-routes={{ advertise_routes | join(',') }}"
+      - "--advertise-exit-node={{ advertise_exit_node | bool | lower }}"
+  vars:
+    _ts_current_routes: "{{ (ts_prefs.stdout | from_json).AdvertiseRoutes | default([], true) | sort }}"
+    _ts_desired_routes: "{{ (advertise_routes + (['0.0.0.0/0', '::/0'] if advertise_exit_node | bool else [])) | sort }}"
+  when:
+    - ts_prefs.rc == 0
+    - _ts_current_routes != _ts_desired_routes
+  changed_when: true
