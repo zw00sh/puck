@@ -143,10 +143,12 @@ func liveUp(icmp *icmpResult, probes []probeView) bool {
 }
 
 // seenState computes the SEEN value, its L2-fallback flag, and UnseenSec for a
-// tracked device. SEEN is time since the host was last confirmed UP (ICMP/TCP);
-// if it has never verified up, fall back to its last L2 (ARP) presence, marked.
-// UnseenSec is seconds since last confirmed up (since-tracked for never-up
-// devices), for the DOWN banner's debounce.
+// tracked device. SEEN is time since the host was last confirmed UP (ICMP/TCP).
+// If it has never verified up, only a pure-presence device (no watchdogs, never
+// answered ICMP) falls back to its last L2 (ARP) presence, marked; a device we
+// expect liveness from shows "—" until actually verified up (ARP is presence,
+// not liveness). UnseenSec is seconds since last confirmed up (since-tracked for
+// never-up devices), for the DOWN banner's debounce.
 func (s *Server) seenState(mac string, v deviceView, arpSeenSec, createdAt int64) (seen string, l2 bool, unseenSec int) {
 	if deviceUp(v) {
 		return "now", false, 0
@@ -155,14 +157,20 @@ func (s *Server) seenState(mac string, v deviceView, arpSeenSec, createdAt int64
 		age := nowUnix() - ts
 		return neigh.FmtSeen(age), false, int(age)
 	}
-	// Never verified up — fall back to L2 (ARP) presence, marked. UnseenSec is
-	// measured from when the device was tracked so a fresh add gets the same grace.
+	// Never verified up. UnseenSec is measured from when the device was tracked so
+	// a fresh add gets the same grace.
 	unseenSec = int(nowUnix() - createdAt)
-	if arpSeenSec >= 0 {
-		return neigh.FmtSeen(arpSeenSec), true, unseenSec
-	}
-	if ts := s.store.LastSeen(mac); ts > 0 {
-		return neigh.FmtSeen(nowUnix() - ts), true, unseenSec
+	// A device we expect real liveness from — one with watchdogs, or that has
+	// answered ICMP before — must not show ARP presence as a sighting: ARP is
+	// presence, not liveness. Leave SEEN empty until it's actually verified up.
+	// Only a pure-presence device (nothing expected of it) falls back to L2 (ARP).
+	if len(v.Probes) == 0 && !v.IcmpSeen {
+		if arpSeenSec >= 0 {
+			return neigh.FmtSeen(arpSeenSec), true, unseenSec
+		}
+		if ts := s.store.LastSeen(mac); ts > 0 {
+			return neigh.FmtSeen(nowUnix() - ts), true, unseenSec
+		}
 	}
 	return "—", false, unseenSec
 }
