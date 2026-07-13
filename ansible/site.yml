@@ -57,18 +57,24 @@
           (copy secrets.yml.example), or pass -e pi_password=... for a one-off.
         quiet: true
   roles:
-    - provision
-    - watchdog
-    - unattended_upgrades
-    - docker
+    - role: provision
+      tags: provision
+    - role: watchdog
+      tags: watchdog
+    - role: unattended_upgrades
+      tags: unattended_upgrades
+    - role: docker
+      tags: docker
     # Skipped entirely when no auth key is supplied, leaving any existing
     # enrollment untouched (password-only re-runs don't disturb Tailscale).
     - role: tailscale
       when: ts_authkey | default('') | length > 0
+      tags: tailscale
     # Optional ad-blocking resolver; disabled by default. Enable per run with
     # -e pihole_enabled=true (and set pihole_admin_password to pin the admin pw).
     - role: pihole
       when: pihole_enabled | default(false)
+      tags: pihole
     # puckview — WoL + LAN-presence + diagnostics dashboard. Runs last so its
     # catalogue/serve sees every enabled service, and claims the bare http://<host>
     # (:80) front door.
@@ -84,4 +90,5 @@
   gather_facts: false
   become: true
   roles:
-    - lockdown
+    - role: lockdown
+      tags: lockdown
