@@ -18,7 +18,13 @@ pihole_web_port: 8080
 # from puckview's (80) so the two don't contend for the same serve port.
 pihole_serve_port: 8080
 # DNS listen mode for LAN devices that point their resolver at this puck:
-# 'LOCAL' answers only on the box's local subnet(s) — the right scope for
-# LAN-local ad-blocking. ('ALL' would also answer on the tailnet, but this is
-# NOT the tailnet resolver, so there's no need to expose :53 there.)
-pihole_listening_mode: "LOCAL"
+# 'BIND' binds :53 only to pihole_dns_interface (the LAN NIC) — DNS is reachable
+# on that interface's IP alone, never the tailnet or docker bridge. This is the
+# LAN-local ad-blocking scope; Pi-hole is NOT the tailnet resolver. Modes:
+# 'LOCAL' (answer on all interfaces, filter by source subnet), 'SINGLE' (respond
+# only on the named interface), 'BIND' (bind sockets to it), 'ALL' (permit all).
+pihole_listening_mode: "BIND"
+# Interface BIND/SINGLE modes bind to. The LAN NIC — eth0 on the NanoPi Zero2.
+# Override per host if a box names it differently. The puck resolves its own DNS
+# via Tailscale MagicDNS, not this container, so binding off loopback is safe.
+pihole_dns_interface: "eth0"

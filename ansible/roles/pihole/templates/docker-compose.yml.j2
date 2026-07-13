@@ -14,7 +14,10 @@ services:
       # Admin UI on loopback only (tailnet-only via `tailscale serve`); served on
       # its own port (the bare :80 is puckview). Format is [ip:]port.
       - FTLCONF_webserver_port={{ pihole_web_bind }}:{{ pihole_web_port }}
-      # Answer DNS on all interfaces (incl. the tailnet). Tailnet ACL is the gate.
+      # DNS scope. BIND (default) binds :53 to the LAN NIC only (dns_interface),
+      # so DNS answers on the LAN IP alone — not the tailnet or docker bridge.
+      # Pi-hole is LAN-local, not the tailnet resolver. See pihole defaults.
       - FTLCONF_dns_listeningMode={{ pihole_listening_mode }}
+      - FTLCONF_dns_interface={{ pihole_dns_interface }}
     volumes:
       - ./etc-pihole:/etc/pihole   # FTL database + config (persists blocklists, settings)
