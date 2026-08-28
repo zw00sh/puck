@@ -58,6 +58,111 @@
     state: present
     pull: missing
 
+# --- Keep BIND working across reboots ------------------------------------------
+# listeningMode is BIND (dnsmasq bind-interfaces): :53 is bound to the LAN NIC's
+# *address*, evaluated once when FTL starts. We keep BIND (not SINGLE/bind-dynamic)
+# on purpose — this puck can be a subnet router, so tailnet clients reach Pi-hole
+# at the LAN IP via the advertised route: their queries arrive on tailscale0 but
+# are destined for eth0's address, and only bind-interfaces answers those
+# (bind-dynamic filters by *arrival* interface and would drop them).
+#
+# The cost of BIND is a startup race: if eth0 has no IPv4 yet when FTL starts
+# (NetworkManager reaches network-online.target before the DHCP lease lands),
+# dnsmasq logs `unknown interface eth0`, falls back to loopback, and never
+# rebinds — DNS is dead until something restarts the container. Two guards:
+#   1. Prevent — hold Docker (and thus container autostart) until eth0 has IPv4.
+#   2. Cure    — a timer that restarts the container if it ever goes unhealthy.
+
+- name: Install the eth0-ready gate (Pi-hole BIND needs the LAN NIC's IPv4 at start)
+  ansible.builtin.copy:
+    dest: "/etc/systemd/system/pihole-wait-{{ pihole_dns_interface }}.service"
+    mode: "0644"
+    content: |
+      # Managed by Ansible. Blocks until {{ pihole_dns_interface }} has an IPv4
+      # address so Pi-hole's bind-interfaces (BIND) binds the LAN NIC first try.
+      # Fails open after 60s — the healthcheck timer is the backstop.
+      [Unit]
+      Description=Wait for {{ pihole_dns_interface }} IPv4 (Pi-hole BIND)
+      After=network-online.target
+      Wants=network-online.target
+      Before=docker.service
+
+      [Service]
+      Type=oneshot
+      RemainAfterExit=yes
+      ExecStart=/bin/sh -c 'for i in $(seq 1 60); do ip -4 addr show {{ pihole_dns_interface }} | grep -q "inet " && exit 0; sleep 1; done; exit 0'
+
+      [Install]
+      WantedBy=multi-user.target
+  notify: Reload systemd daemon
+
+- name: Ensure the docker.service drop-in directory exists
+  ansible.builtin.file:
+    path: /etc/systemd/system/docker.service.d
+    state: directory
+    mode: "0755"
+
+- name: Order Docker after the eth0-ready gate
+  ansible.builtin.copy:
+    dest: "/etc/systemd/system/docker.service.d/10-pihole-wait-{{ pihole_dns_interface }}.conf"
+    mode: "0644"
+    content: |
+      # Managed by Ansible. Hold container autostart until {{ pihole_dns_interface }}
+      # has its IPv4 address (see pihole-wait-{{ pihole_dns_interface }}.service).
+      [Unit]
+      After=pihole-wait-{{ pihole_dns_interface }}.service
+      Wants=pihole-wait-{{ pihole_dns_interface }}.service
+  notify: Reload systemd daemon
+
+- name: Install the Pi-hole DNS healthcheck script
+  ansible.builtin.copy:
+    src: pihole-healthcheck.sh
+    dest: /usr/local/sbin/pihole-healthcheck.sh
+    mode: "0755"
+
+- name: Install the Pi-hole healthcheck service
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/pihole-healthcheck.service
+    mode: "0644"
+    content: |
+      # Managed by Ansible. Restarts Pi-hole if Docker marks it unhealthy.
+      [Unit]
+      Description=Restart Pi-hole if its DNS healthcheck is failing
+      After=docker.service
+      Requires=docker.service
+
+      [Service]
+      Type=oneshot
+      ExecStart=/usr/local/sbin/pihole-healthcheck.sh
+  notify: Reload systemd daemon
+
+- name: Install the Pi-hole healthcheck timer
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/pihole-healthcheck.timer
+    mode: "0644"
+    content: |
+      # Managed by Ansible. Checks Pi-hole health shortly after boot, then hourly-ish.
+      [Unit]
+      Description=Periodically restart Pi-hole if it is unhealthy
+
+      [Timer]
+      OnBootSec=90s
+      OnUnitActiveSec=60s
+
+      [Install]
+      WantedBy=timers.target
+  notify: Reload systemd daemon
+
+- name: Enable the eth0-ready gate and the healthcheck timer
+  ansible.builtin.systemd:
+    name: "{{ item.name }}"
+    enabled: true
+    state: "{{ item.state }}"
+    daemon_reload: true
+  loop:
+    - { name: "pihole-wait-{{ pihole_dns_interface }}.service", state: "started" }
+    - { name: "pihole-healthcheck.timer", state: "started" }
+
 - name: Note when no admin password was pinned
   ansible.builtin.debug:
     msg: >-
