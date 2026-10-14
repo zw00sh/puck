@@ -28,6 +28,12 @@ puckview_serve_port: 80
 # (never the box's own MagicDNS resolver, which would return tailnet IPs).
 puckview_lan_resolver: ""
 
+# How long active probing continues after the dashboard's last proof-of-life
+# pulse. The page pulses every 10s while visible, so keep this comfortably
+# above that or the activity gate flaps (puckview warns at startup if it is
+# too low to be workable).
+puckview_grace: "30s"
+
 # Service catalogue — the one baked-in list (devices are dynamic/app-owned).
 # Enable a service and it appears here; change its serve port and the link + health
 # check follow. `port` is the tailnet serve port AND the loopback backend port
