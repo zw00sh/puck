@@ -5,7 +5,6 @@ import (
 	"time"
 
 	"github.com/zw00sh/puck/puckview/internal/probe"
-	"github.com/zw00sh/puck/puckview/internal/store"
 )
 
 const probeTimeout = 700 * time.Millisecond
@@ -31,60 +30,35 @@ func probeOne(ip string, port int) probeView {
 	return probeView{Port: port, St: "down", Note: "closed"}
 }
 
-// getLive returns the most recent active-probe results for a device (empty until
-// the first probe of a session).
-func (s *Server) getLive(mac, ip string, ports []int) (*icmpResult, []probeView) {
-	s.liveMu.Lock()
-	defer s.liveMu.Unlock()
-	p, ok := s.liveResults[mac]
-	if !ok {
-		return nil, nil
-	}
-	return p.icmp, p.probes
-}
-
 // probeTracked actively probes every tracked device (ICMP + each TCP watchdog)
-// and caches the results. This is gated network traffic: callers invoke it only
-// while the activity gate is open.
+// and folds the results into the in-memory model. This is gated network traffic:
+// the probe loop calls it only while the activity gate is open.
+//
+// Results used to be written to the database here — a row per up device per
+// cycle, which is what grew the old seen_history log to 1.6M rows. Presence now
+// lives in memory and is flushed on a slow cadence; see state.applyProbes.
 func (s *Server) probeTracked() {
-	devs, err := s.store.List()
-	if err != nil {
-		return
-	}
-	results := make(map[string]livePart, len(devs))
+	snap := s.state.snapshot()
+	results := make(map[string]livePart, len(snap))
 	var mu sync.Mutex
 	var wg sync.WaitGroup
-	for _, d := range devs {
-		if d.IP == "" {
+	for _, ds := range snap {
+		if ds.dev.IP == "" {
 			continue
 		}
 		wg.Add(1)
-		go func(d store.Device) {
+		go func(mac, ip string, ports []int) {
 			defer wg.Done()
 			var part livePart
-			part.icmp = probeICMP(d.IP)
-			for _, p := range d.Probes {
-				part.probes = append(part.probes, probeOne(d.IP, p))
+			part.icmp = probeICMP(ip)
+			for _, p := range ports {
+				part.probes = append(part.probes, probeOne(ip, p))
 			}
 			mu.Lock()
-			results[d.MAC] = part
+			results[mac] = part
 			mu.Unlock()
-			// Record a presence snapshot when any active signal answered, to
-			// extend last-seen history beyond the kernel's neigh retention.
-			if part.icmp != nil && part.icmp.St == "up" {
-				s.store.RecordSeen(d.MAC, "up", "icmp")
-			} else {
-				for _, pv := range part.probes {
-					if pv.St == "up" {
-						s.store.RecordSeen(d.MAC, "up", "tcp")
-						break
-					}
-				}
-			}
-		}(d)
+		}(ds.dev.MAC, ds.dev.IP, ds.dev.Probes)
 	}
 	wg.Wait()
-	s.liveMu.Lock()
-	s.liveResults = results
-	s.liveMu.Unlock()
+	s.state.applyProbes(results, nowUnix())
 }

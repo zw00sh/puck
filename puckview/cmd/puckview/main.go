@@ -44,7 +44,13 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	go srv.Run(ctx)
+	// Run owns the sampling loops and the write-behind flush; wait for it before
+	// the deferred store.Close so the final flush is not cut off mid-commit.
+	runDone := make(chan struct{})
+	go func() {
+		defer close(runDone)
+		srv.Run(ctx)
+	}()
 
 	httpSrv := &http.Server{
 		Addr:    cfg.Listen,
@@ -62,5 +68,6 @@ func main() {
 	if err := httpSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		log.Fatalf("server error: %v", err)
 	}
+	<-runDone
 	log.Print("shut down cleanly")
 }

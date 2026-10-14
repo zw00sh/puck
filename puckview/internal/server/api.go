@@ -46,8 +46,7 @@ func clampName(s string) string {
 
 // GET /api/devices
 func (s *Server) handleListDevices(w http.ResponseWriter, r *http.Request) {
-	byMAC, _ := neighSnapshot()
-	writeJSON(w, s.buildDevices(byMAC))
+	writeJSON(w, s.buildDevices())
 }
 
 // POST /api/devices  {mac, ip?, name?, manual?}
@@ -75,6 +74,7 @@ func (s *Server) handleTrackDevice(w http.ResponseWriter, r *http.Request) {
 	}
 	mac := store.NormMAC(in.MAC)
 	s.store.DeleteObserved(mac) // it's tracked now; drop it from recently-seen
+	s.state.forgetObserved(mac)
 	// A user-typed name is durable: mark it manual so the background resolve fills
 	// only the vendor and never overwrites the name.
 	if in.Manual && in.Name != "" {
@@ -85,7 +85,8 @@ func (s *Server) handleTrackDevice(w http.ResponseWriter, r *http.Request) {
 	if in.IP != "" {
 		go s.resolveAsync(mac, in.IP)
 	}
-	s.pushPresence()
+	s.reloadState()
+	s.kickRender()
 	w.WriteHeader(http.StatusCreated)
 }
 
@@ -115,7 +116,8 @@ func (s *Server) handlePatchDevice(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	s.pushPresence()
+	s.reloadState()
+	s.kickRender()
 	w.WriteHeader(http.StatusOK)
 }
 
@@ -125,7 +127,8 @@ func (s *Server) handleUntrackDevice(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	s.pushPresence()
+	s.reloadState()
+	s.kickRender()
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -143,7 +146,8 @@ func (s *Server) handleAddProbe(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	s.pushPresence()
+	s.reloadState()
+	s.kickRender()
 	w.WriteHeader(http.StatusCreated)
 }
 
@@ -158,7 +162,8 @@ func (s *Server) handleDeleteProbe(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	s.pushPresence()
+	s.reloadState()
+	s.kickRender()
 	w.WriteHeader(http.StatusNoContent)
 }
 

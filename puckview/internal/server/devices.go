@@ -76,50 +76,32 @@ func better(a, b neigh.Entry) bool {
 	return stateRank[a.State] > stateRank[b.State]
 }
 
-// buildDevices assembles the tracked-device view from the store, the neighbour
-// snapshot, and (optionally) active liveness results.
-func (s *Server) buildDevices(byMAC map[string]neigh.Entry) []deviceView {
-	devs, err := s.store.List()
-	if err != nil {
-		return nil
-	}
-	icmpSeen, _ := s.store.ICMPSeenSet()
-	out := make([]deviceView, 0, len(devs))
-	for _, d := range devs {
-		v := deviceView{MAC: d.MAC, IP: d.IP, Name: d.Name, Vendor: d.Vendor, Probes: []probeView{}}
-		v.IcmpSeen = icmpSeen[d.MAC]
+// buildDevices assembles the tracked-device view from the in-memory model. Pure
+// CPU over a snapshot — no database access, which is what lets it run every
+// second (and on every connect) without the box noticing.
+func (s *Server) buildDevices() []deviceView {
+	now := nowUnix()
+	snap := s.state.snapshot()
+	out := make([]deviceView, 0, len(snap))
+	for _, ds := range snap {
+		v := deviceView{
+			MAC: ds.dev.MAC, IP: ds.dev.IP, Name: ds.dev.Name,
+			Vendor: ds.dev.Vendor, Arp: ds.arp, IcmpSeen: ds.icmpSeen,
+			Probes: []probeView{},
+		}
 		if v.Vendor == "" {
-			v.Vendor = s.vendorOf(d.MAC)
+			v.Vendor = s.vendorOf(ds.dev.MAC)
 		}
-
-		arp := "down"
-		arpSeenSec := int64(-1)
-		if e, ok := byMAC[d.MAC]; ok {
-			arp = e.State
-			arpSeenSec = e.SeenSec
-			// Persist the sighting (throttled) so the device still shows a useful
-			// last-seen after it drops out of the kernel neigh cache.
-			s.touchSeen(d.MAC, e.State)
-			if e.IP != "" && e.IP != d.IP {
-				// ARP reconciliation: the device moved IPs.
-				s.store.ReconcileIP(d.MAC, e.IP)
-				v.IP = e.IP
-			}
-		}
-		v.Arp = arp
-
-		icmp, probes := s.getLive(d.MAC, v.IP, d.Probes)
-		v.Icmp = icmp
-		if probes != nil {
-			v.Probes = probes
+		v.Icmp = ds.live.icmp
+		if ds.live.probes != nil {
+			v.Probes = ds.live.probes
 		}
 		if len(v.Probes) == 0 {
-			for _, p := range d.Probes {
+			for _, p := range ds.dev.Probes {
 				v.Probes = append(v.Probes, probeView{Port: p, St: "down"})
 			}
 		}
-
-		v.Seen, v.SeenL2, v.UnseenSec = s.seenState(d.MAC, v, arpSeenSec, d.CreatedAt)
+		v.Seen, v.SeenL2, v.UnseenSec = seenState(ds, v, now)
 		out = append(out, v)
 	}
 	return out
@@ -149,27 +131,27 @@ func liveUp(icmp *icmpResult, probes []probeView) bool {
 // expect liveness from shows "—" until actually verified up (ARP is presence,
 // not liveness). UnseenSec is seconds since last confirmed up (since-tracked for
 // never-up devices), for the DOWN banner's debounce.
-func (s *Server) seenState(mac string, v deviceView, arpSeenSec, createdAt int64) (seen string, l2 bool, unseenSec int) {
+func seenState(ds devState, v deviceView, now int64) (seen string, l2 bool, unseenSec int) {
 	if deviceUp(v) {
 		return "now", false, 0
 	}
-	if ts := s.store.LastSeenUp(mac); ts > 0 {
-		age := nowUnix() - ts
+	if ds.lastSeenUp > 0 {
+		age := now - ds.lastSeenUp
 		return neigh.FmtSeen(age), false, int(age)
 	}
 	// Never verified up. UnseenSec is measured from when the device was tracked so
 	// a fresh add gets the same grace.
-	unseenSec = int(nowUnix() - createdAt)
+	unseenSec = int(now - ds.dev.CreatedAt)
 	// A device we expect real liveness from — one with watchdogs, or that has
 	// answered ICMP before — must not show ARP presence as a sighting: ARP is
 	// presence, not liveness. Leave SEEN empty until it's actually verified up.
 	// Only a pure-presence device (nothing expected of it) falls back to L2 (ARP).
-	if len(v.Probes) == 0 && !v.IcmpSeen {
-		if arpSeenSec >= 0 {
-			return neigh.FmtSeen(arpSeenSec), true, unseenSec
+	if len(ds.dev.Probes) == 0 && !ds.icmpSeen {
+		if ds.arpSeen >= 0 {
+			return neigh.FmtSeen(ds.arpSeen), true, unseenSec
 		}
-		if ts := s.store.LastSeen(mac); ts > 0 {
-			return neigh.FmtSeen(nowUnix() - ts), true, unseenSec
+		if ds.lastSeen > 0 {
+			return neigh.FmtSeen(now - ds.lastSeen), true, unseenSec
 		}
 	}
 	return "—", false, unseenSec
@@ -183,12 +165,8 @@ const observedTTL = 7 * 24 * 60 * 60 // 1 week, seconds
 // entries, plus untracked hosts seen within observedTTL that have since dropped
 // out of the kernel cache (shown as down with their last-seen).
 func (s *Server) buildCache(entries []neigh.Entry) []cacheView {
-	tracked := map[string]bool{}
-	if devs, err := s.store.List(); err == nil {
-		for _, d := range devs {
-			tracked[d.MAC] = true
-		}
-	}
+	now := nowUnix()
+	tracked := s.state.tracked()
 	present := map[string]bool{}
 	out := []cacheView{}
 
@@ -203,39 +181,24 @@ func (s *Server) buildCache(entries []neigh.Entry) []cacheView {
 			IP: e.IP, MAC: e.MAC, Name: name,
 			Vendor: s.vendorOf(e.MAC), State: e.State, Seen: neigh.FmtSeen(e.SeenSec),
 		})
-		s.touchObserved(e.MAC, e.IP, name) // persist sighting for the recently-seen view
+		s.state.touchObserved(e.MAC, e.IP, name, now) // remembered for the view below
 	}
 
 	// 2) Recently seen but gone now (within the retention window).
-	if obs, err := s.store.ListObserved(nowUnix() - observedTTL); err == nil {
-		for _, o := range obs {
-			if tracked[o.MAC] || present[o.MAC] {
-				continue
-			}
-			name := o.Name
-			if name == "" {
-				name = s.cachedName(o.IP)
-			}
-			out = append(out, cacheView{
-				IP: o.IP, MAC: o.MAC, Name: name,
-				Vendor: s.vendorOf(o.MAC), State: "down", Seen: neigh.FmtSeen(nowUnix() - o.LastSeen),
-			})
+	for _, o := range s.state.observedSince(now - observedTTL) {
+		if tracked[o.MAC] || present[o.MAC] {
+			continue
 		}
+		name := o.Name
+		if name == "" {
+			name = s.cachedName(o.IP)
+		}
+		out = append(out, cacheView{
+			IP: o.IP, MAC: o.MAC, Name: name,
+			Vendor: s.vendorOf(o.MAC), State: "down", Seen: neigh.FmtSeen(now - o.LastSeen),
+		})
 	}
 	return out
-}
-
-// touchObserved persists an untracked sighting (throttled to once/min per MAC).
-func (s *Server) touchObserved(mac, ip, name string) {
-	now := nowUnix()
-	s.obsMu.Lock()
-	if now-s.obsWrite[mac] < 60 {
-		s.obsMu.Unlock()
-		return
-	}
-	s.obsWrite[mac] = now
-	s.obsMu.Unlock()
-	s.store.UpsertObserved(mac, ip, name, now)
 }
 
 // onLAN reports whether ip is a real unicast host on the box's LAN subnet. It
@@ -251,21 +214,6 @@ func (s *Server) onLAN(ipStr string) bool {
 		return n.Contains(ip)
 	}
 	return true
-}
-
-// touchSeen records a passive sighting of a tracked device, throttled to at most
-// once per minute per device so seen_history doesn't bloat.
-func (s *Server) touchSeen(mac, state string) {
-	now := nowUnix()
-	s.seenMu.Lock()
-	last := s.seenWrite[mac]
-	if now-last < 60 {
-		s.seenMu.Unlock()
-		return
-	}
-	s.seenWrite[mac] = now
-	s.seenMu.Unlock()
-	s.store.RecordSeen(mac, state, "arp")
 }
 
 // vendorOf resolves a MAC's vendor from the embedded OUI table (passive, local).

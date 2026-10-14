@@ -87,12 +87,7 @@ func (s *Server) runScan(cidr string) {
 	}
 
 	// Build results: in-subnet neighbours that aren't already tracked.
-	tracked := map[string]bool{}
-	if devs, e := s.store.List(); e == nil {
-		for _, d := range devs {
-			tracked[d.MAC] = true
-		}
-	}
+	tracked := s.state.tracked()
 	var ips []string
 	for _, e := range entries {
 		if !tracked[e.MAC] {
@@ -117,8 +112,8 @@ func (s *Server) runScan(cidr string) {
 		Msg:     fmt.Sprintf("done · %d new host(s)", len(results)),
 		Results: results,
 	})
-	// Refresh the passive views now that the cache is warm.
-	s.pushPresence()
+	// Refresh the passive views now that the name cache is warm.
+	s.kickRender()
 }
 
 // POST /api/devices/{mac}/resolve → re-run name resolution (active, gated by the
@@ -136,7 +131,8 @@ func (s *Server) handleResolve(w http.ResponseWriter, r *http.Request) {
 	}
 	res := naming.Resolve(dev.IP, dev.MAC, s.lanResolver(), resolveTimeout)
 	s.applyResolve(mac, res)
-	s.pushPresence()
+	s.reloadState()
+	s.kickRender()
 	writeJSON(w, res)
 }
 
@@ -160,5 +156,6 @@ func (s *Server) applyResolve(mac string, res naming.Result) {
 func (s *Server) resolveAsync(mac, ip string) {
 	res := naming.Resolve(ip, mac, s.lanResolver(), resolveTimeout)
 	s.applyResolve(mac, res)
-	s.pushPresence()
+	s.reloadState()
+	s.kickRender()
 }

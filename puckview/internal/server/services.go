@@ -19,10 +19,12 @@ type serviceView struct {
 	Up     bool   `json:"up"`
 }
 
-// refreshMeta refreshes the cached tailnet state and service catalogue and
-// broadcasts the SERVICES frame. tailscale/catalogue reads are passive; the
-// per-service health check is a local TCP connect (loopback), which is cheap and
-// not "spurious" LAN traffic.
+// refreshMeta refreshes the cached tailnet state and service catalogue.
+// tailscale/catalogue reads are passive; the per-service health check is a local
+// TCP connect (loopback), which is cheap and not "spurious" LAN traffic.
+//
+// It does not broadcast: the render loop picks the cache up on its next frame
+// and sends it only if it actually changed.
 func (s *Server) refreshMeta() {
 	ts := tailscale.Status()
 
@@ -48,8 +50,6 @@ func (s *Server) refreshMeta() {
 	s.tsInfo = ts
 	s.services = svcs
 	s.metaMu.Unlock()
-
-	s.hub.Broadcast("services", svcs)
 }
 
 func (s *Server) getTS() *tailscale.Info {

@@ -352,9 +352,20 @@ function renderServices(svcs) {
   }).join('');
 }
 
-// ---------- SSE wiring ----------
-function connect() {
-  const es = new EventSource('/events');
+// ---------- SSE wiring + proof-of-life ----------
+// The server gates active LAN probing on evidence that a human is actually
+// looking, and an open socket is not that evidence: a `tailscale serve` proxy or
+// a suspended phone will hold one open indefinitely (one puck probed its LAN
+// around the clock for six weeks that way). So this page has two jobs beyond
+// rendering — pulse while it is visible, and drop the stream when it isn't.
+const PULSE_MS = 10000;  // mirrors pulseInterval in internal/server/sse.go
+let es = null, pulseTimer = null;
+
+const pulse = () => fetch('/api/pulse', { method: 'POST', keepalive: true }).catch(() => { });
+
+function openStream() {
+  if (es) return;
+  es = new EventSource('/events');
   es.addEventListener('hello', e => renderHello(JSON.parse(e.data)));
   es.addEventListener('stats', e => { renderStats(JSON.parse(e.data)); markFresh(); });
   es.addEventListener('devices', e => {
@@ -371,6 +382,22 @@ function connect() {
   es.addEventListener('wake', e => paintWake(JSON.parse(e.data)));
   es.addEventListener('services', e => renderServices(JSON.parse(e.data)));
 }
+
+// Watching = stream attached + pulsing. Going hidden stops both, which closes
+// the server's activity gate after its grace window; coming back re-attaches and
+// the server replays its cached frame set, so the dashboard repaints at once.
+function startWatching() {
+  openStream();
+  if (!pulseTimer) { pulse(); pulseTimer = setInterval(pulse, PULSE_MS); }
+}
+function stopWatching() {
+  if (es) { es.close(); es = null; }
+  if (pulseTimer) { clearInterval(pulseTimer); pulseTimer = null; }
+  $('#freshness').classList.add('stale');
+}
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') startWatching(); else stopWatching();
+});
 
 // True while the user is actively typing in a TRACKED input (the add draft or an
 // edit-mode field) — re-rendering then would discard their keystrokes.
@@ -408,5 +435,5 @@ function markFresh() {
 setDisc('cache');
 renderTracked();
 renderCache();
-connect();
+startWatching();
 setInterval(() => { if (lastStats && Date.now() - lastStats > 3000) $('#freshness').classList.add('stale'); }, 1000);

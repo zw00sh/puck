@@ -9,10 +9,13 @@ import (
 )
 
 type Config struct {
-	Listen      string        // PUCKVIEW_LISTEN   — HTTP listen address
-	DBPath      string        // PUCKVIEW_DB       — SQLite file
-	Iface       string        // PUCKVIEW_IFACE    — LAN interface ("" = auto-detect)
-	Grace       time.Duration // PUCKVIEW_GRACE    — probe-stop grace after last client leaves
+	Listen string // PUCKVIEW_LISTEN   — HTTP listen address
+	DBPath string // PUCKVIEW_DB       — SQLite file
+	Iface  string // PUCKVIEW_IFACE    — LAN interface ("" = auto-detect)
+	// Grace is how long active probing continues after the dashboard's last
+	// proof-of-life pulse. It must stay comfortably above the page's 10s pulse
+	// interval so one dropped pulse doesn't close the gate mid-session.
+	Grace       time.Duration // PUCKVIEW_GRACE
 	Catalogue   string        // PUCKVIEW_CATALOGUE — service catalogue JSON path
 	LANResolver string        // PUCKVIEW_LAN_RESOLVER — rDNS target ("" = default gateway)
 }
@@ -22,7 +25,7 @@ func Load() Config {
 		Listen:      env("PUCKVIEW_LISTEN", "127.0.0.1:8091"),
 		DBPath:      env("PUCKVIEW_DB", "/var/lib/puckview/puckview.db"),
 		Iface:       env("PUCKVIEW_IFACE", ""),
-		Grace:       envDuration("PUCKVIEW_GRACE", 15*time.Second),
+		Grace:       envDuration("PUCKVIEW_GRACE", 30*time.Second),
 		Catalogue:   env("PUCKVIEW_CATALOGUE", "/opt/puckview/catalogue.json"),
 		LANResolver: env("PUCKVIEW_LAN_RESOLVER", ""),
 	}

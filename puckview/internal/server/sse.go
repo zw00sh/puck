@@ -1,24 +1,37 @@
 package server
 
 import (
-	"encoding/json"
-	"fmt"
 	"net/http"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
-// Hub is the SSE fan-out and the activity gate in one. An open client
-// connection is what authorizes active probing; when the last client leaves,
-// Active() stays true for the grace window then flips false so the sampler goes
-// quiet (the "good network citizen" requirement).
+// pulseInterval is how often the dashboard is expected to re-assert that a
+// human is watching. It must stay comfortably below cfg.Grace so that one
+// dropped pulse doesn't close the activity gate. Mirrored in web/assets/app.js.
+const pulseInterval = 10 * time.Second
+
+// Hub is the SSE fan-out plus the activity gate.
+//
+// The gate is deliberately NOT "is a socket open". An open connection proves
+// nothing about whether anyone is looking: a `tailscale serve` proxy, a
+// suspended phone, or a crashed browser will all hold one open indefinitely —
+// which is how a puck ended up probing its LAN around the clock for six weeks
+// with nobody watching. So liveness has to be asserted by the page itself:
+// the dashboard POSTs /api/pulse while it is visible, and Active() is true only
+// while a recent pulse stands.
+//
+// The two gates are separate on purpose:
+//   - Clients()  — are there sockets to write to? Gates BROADCASTING.
+//   - Active()   — is a human watching? Gates ACTIVE NETWORK PROBING.
 type Hub struct {
 	grace time.Duration
 
-	mu          sync.Mutex
-	clients     map[chan []byte]struct{}
-	lastSeenAt  time.Time // when client count last dropped to zero
-	everHadDrop bool
+	mu      sync.Mutex
+	clients map[chan []byte]struct{}
+
+	lastPulse atomic.Int64 // UnixNano of the most recent proof-of-life (0 = never)
 }
 
 func NewHub(grace time.Duration) *Hub {
@@ -32,27 +45,26 @@ func (h *Hub) Clients() int {
 	return len(h.clients)
 }
 
+// Pulse records proof that a dashboard is visible to someone. Nanosecond
+// precision: at second granularity a fresh pulse can already read as up to a
+// second old, which matters when the grace window is short.
+func (h *Hub) Pulse() { h.lastPulse.Store(time.Now().UnixNano()) }
+
 // Active reports whether active network probing is currently authorized.
 func (h *Hub) Active() bool {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	if len(h.clients) > 0 {
-		return true
-	}
-	if !h.everHadDrop {
+	p := h.lastPulse.Load()
+	if p == 0 {
 		return false
 	}
-	return time.Since(h.lastSeenAt) < h.grace
+	return time.Since(time.Unix(0, p)) < h.grace
 }
 
-// Broadcast marshals data and sends it to all connected clients as a named SSE
-// event. Slow clients are skipped rather than blocking the sampler.
-func (h *Hub) Broadcast(event string, data any) {
-	payload, err := json.Marshal(data)
-	if err != nil {
+// send fans an already-marshalled frame out to every client. Slow clients are
+// skipped rather than blocking the render loop.
+func (h *Hub) send(msg []byte) {
+	if msg == nil {
 		return
 	}
-	msg := []byte(fmt.Sprintf("event: %s\ndata: %s\n\n", event, payload))
 	h.mu.Lock()
 	for ch := range h.clients {
 		select {
@@ -62,6 +74,10 @@ func (h *Hub) Broadcast(event string, data any) {
 	}
 	h.mu.Unlock()
 }
+
+// Broadcast marshals and fans out a named event. Used for the ad-hoc streams
+// (wake, scan) that aren't part of the per-tick frame set.
+func (h *Hub) Broadcast(event string, data any) { h.send(sseFrame(event, data)) }
 
 func (h *Hub) add() chan []byte {
 	ch := make(chan []byte, 16)
@@ -74,15 +90,17 @@ func (h *Hub) add() chan []byte {
 func (h *Hub) remove(ch chan []byte) {
 	h.mu.Lock()
 	delete(h.clients, ch)
-	if len(h.clients) == 0 {
-		h.lastSeenAt = time.Now()
-		h.everHadDrop = true
-	}
 	h.mu.Unlock()
 	close(ch)
 }
 
 // handleEvents is the GET /events SSE endpoint.
+//
+// Nothing expensive may happen before the headers are flushed. The old version
+// built a full presence frame first, which meant the browser saw no response at
+// all — not even a status line — until that work finished; a slow frame showed
+// up as a dashboard that loaded instantly and then sat empty. Headers go out
+// first, then the cached frame set, then we just relay.
 func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 	flusher, ok := w.(http.Flusher)
 	if !ok {
@@ -92,19 +110,33 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("X-Accel-Buffering", "no")
+	w.WriteHeader(http.StatusOK)
+	flusher.Flush()
 
+	// Attach before writing the greeting, so a frame published mid-greeting is
+	// queued rather than missed. A duplicate frame is harmless — renders idempotently.
 	ch := s.hub.add()
 	defer s.hub.remove(ch)
 
-	// Greet immediately so the client can render the static identity, and push a
-	// first stats frame without waiting for the next tick.
-	s.hub.Broadcast("hello", s.helloPayload())
-	s.pushOnce()
-	if svcs := s.snapshotServices(); svcs != nil {
-		s.hub.Broadcast("services", svcs)
-	} else {
-		s.goRefreshMeta() // first client: warm tailnet/services cache
+	// A connecting client is proof someone is watching; don't make them wait a
+	// pulse interval for probing to start.
+	s.hub.Pulse()
+
+	greeting := s.frames.Load().greeting()
+	if greeting == nil {
+		// Before the first render tick (only in the first second after boot).
+		greeting = [][]byte{sseFrame("hello", s.helloPayload())}
 	}
+	for _, b := range greeting {
+		if b == nil {
+			continue
+		}
+		if _, err := w.Write(b); err != nil {
+			return
+		}
+	}
+	flusher.Flush()
 
 	// Heartbeat keeps proxies from idling the connection out.
 	hb := time.NewTicker(20 * time.Second)
@@ -126,4 +158,11 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 			flusher.Flush()
 		}
 	}
+}
+
+// handlePulse is POST /api/pulse — the dashboard's proof-of-life, which gates
+// active probing. See Hub.
+func (s *Server) handlePulse(w http.ResponseWriter, r *http.Request) {
+	s.hub.Pulse()
+	w.WriteHeader(http.StatusNoContent)
 }

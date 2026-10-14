@@ -47,8 +47,8 @@ func TestDeviceLifecycle(t *testing.T) {
 		t.Fatalf("probes after delete = %v, want []", d.Probes)
 	}
 
-	// IP reconciliation
-	if err := st.ReconcileIP("aa:bb:cc:dd:ee:ff", "192.0.2.77"); err != nil {
+	// IP reconciliation now rides the write-behind batch (see Store.Flush).
+	if err := st.Flush(Batch{IPMoves: []IPMove{{MAC: "aa:bb:cc:dd:ee:ff", IP: "192.0.2.77"}}}); err != nil {
 		t.Fatal(err)
 	}
 	d, _, _ = st.Get("aa:bb:cc:dd:ee:ff")
